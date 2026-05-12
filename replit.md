@@ -1,45 +1,71 @@
-# [Project name]
+# Phosphorus
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A full-stack Discord leveling bot written in Python. Members earn XP by chatting, level up, and unlock role rewards. Server admins can configure every aspect through slash commands.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `cd bot && python main.py` — run the bot (managed by the **Phosphorus Bot** workflow)
+- Required secret: `DISCORD_BOT_TOKEN` — set in Replit Secrets
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Python 3.12
+- discord.py 2.x (slash commands via `app_commands`)
+- aiosqlite (async SQLite with WAL mode)
+- python-dotenv (local `.env` support)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+```
+bot/
+├── main.py          # Entry point – bot subclass, cog loader, workflow lifecycle
+├── constants.py     # ★ Single source of truth for all tuneable values
+├── database.py      # All SQLite queries + XP/level math helpers
+├── phosphorus.db    # SQLite database (created at runtime, git-ignored)
+└── cogs/
+    ├── leveling.py      # on_message XP grant, cooldown, level-up announcement, role rewards
+    ├── profile.py       # /rank command with progress bar
+    ├── leaderboard.py   # /leaderboard with paginated button UI
+    └── admin.py         # /resetxp /setlevel /setchannel /setmultiplier /addrolereward …
+```
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- **Constants-first**: every magic number, colour, string, and command name lives in `constants.py` — changing one line propagates everywhere.
+- **WAL mode SQLite**: enables concurrent reads without blocking, keeping latency low under load.
+- **Upsert pattern**: `INSERT … ON CONFLICT DO UPDATE` avoids race conditions and redundant SELECT+INSERT pairs.
+- **Asyncio lock on XP writes**: prevents double-XP from near-simultaneous messages even on a single process.
+- **Cog-based architecture**: each concern (leveling, profile, leaderboard, admin) is an isolated `commands.Cog` — easy to disable or extend.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- **XP on message** — 15–25 XP per eligible message, 60-second cooldown per user per guild, configurable server multiplier.
+- **Level-up announcements** — embed with avatar sent to a configurable channel (or the triggering channel).
+- **Role rewards** — assign any role to trigger at any level; bot grants it automatically on level-up.
+- **`/rank`** — shows level, rank position, total XP, and a visual progress bar to the next level.
+- **`/leaderboard`** — paginated (10 per page) with Prev/Next buttons; live Discord member names.
+- **Admin commands** — `/resetxp`, `/setlevel`, `/setchannel`, `/setmultiplier`, `/addrolereward`, `/removerolereward`, `/listroles`, `/config` — all require Manage Server or Administrator.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Use constants wherever possible for easy tuning.
+- Best practices for resource efficiency (WAL, async, upsert).
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Bot needs **Message Content Intent** and **Server Members Intent** enabled in the Discord Developer Portal.
+- Bot role must be **above** any role it needs to assign in the server's role hierarchy.
+- Slash commands are synced globally on startup — new commands may take up to an hour to appear for all users (instant in the home guild during testing).
+- The PyNaCl warning in logs is expected; voice is not used by this bot.
 
-## Pointers
+## Leveling formula
 
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+`XP needed for level N = floor(100 × N ^ 1.65)`
+
+| Level | XP needed |
+|-------|-----------|
+| 1     | 100       |
+| 5     | 697       |
+| 10    | 1 979     |
+| 25    | 8 769     |
+| 50    | 27 145    |

@@ -2,6 +2,9 @@
 Phosphorus – Discord Leveling Bot
 All tuneable constants live here so changes only happen in one place.
 """
+import os
+
+_BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ──────────────────────────────────────────────
 # Bot metadata
@@ -37,7 +40,7 @@ LEADERBOARD_MAX_PAGES = 10    # Hard cap – never show more than this many page
 # ──────────────────────────────────────────────
 # Database
 # ──────────────────────────────────────────────
-DB_PATH = "bot/phosphorus.db"
+DB_PATH = os.path.join(_BOT_DIR, "phosphorus.db")
 DB_PRAGMAS = {
     "journal_mode": "WAL",    # Write-Ahead Logging for concurrent reads
     "foreign_keys": "ON",
