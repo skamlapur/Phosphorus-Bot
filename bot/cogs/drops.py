@@ -1,6 +1,8 @@
 """
 Phosphorus – XP Drops cog
-Admins create trivia drops; first correct answer wins XP.
+Admin commands for drops live in admin.py.
+This cog handles: listening for correct answers, the expiry loop,
+and the auto-post loop.  It also exposes trigger_drop() for admin.py.
 """
 from __future__ import annotations
 
@@ -8,40 +10,25 @@ import logging
 import time
 
 import discord
-from discord import app_commands
 from discord.ext import commands, tasks
 
 from constants import (
-    BOT_COLOR,
-    BOT_ERROR_COLOR,
     BOT_GOLD_COLOR,
-    BOT_SUCCESS_COLOR,
-    BOT_WARN_COLOR,
-    CMD_DROP_CREATE,
-    CMD_DROP_TRIGGER,
-    DROP_ANNOUNCED,
     DROP_CLAIMED,
-    DROP_CREATED,
     DROP_EXPIRED,
     DROPS_ANSWER_TIMEOUT,
     DROPS_AUTO_INTERVAL_MIN,
-    DROPS_DEFAULT_XP,
     EMBED_FOOTER,
     ERR_DROP_ACTIVE,
     ERR_NO_DROP,
-    ERR_NO_PERMISSION,
 )
 from database import Database, current_week
 
 log = logging.getLogger(__name__)
 
 
-def _is_admin(member: discord.Member) -> bool:
-    return member.guild_permissions.administrator or member.guild_permissions.manage_guild
-
-
 class Drops(commands.Cog, name="Drops"):
-    """XP drop / trivia system."""
+    """XP drop / trivia system (event handling and background loops)."""
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -74,9 +61,11 @@ class Drops(commands.Cog, name="Drops"):
 
         embed = discord.Embed(
             title="🎁 XP Drop!",
-            description=f"**{drop_row['question']}**\n\n"
-                        f"Prize: **{drop_row['xp_amount']} XP** • "
-                        f"Type your answer in this channel!",
+            description=(
+                f"**{drop_row['question']}**\n\n"
+                f"Prize: **{drop_row['xp_amount']} XP** • "
+                f"Type your answer in this channel!"
+            ),
             color=BOT_GOLD_COLOR,
         )
         embed.set_footer(text=f"{EMBED_FOOTER} • Expires in {DROPS_ANSWER_TIMEOUT}s")
@@ -91,105 +80,17 @@ class Drops(commands.Cog, name="Drops"):
         self._drop_expiry[guild_id] = time.time() + DROPS_ANSWER_TIMEOUT
         return True
 
-    # ── slash commands ────────────────────────────────────────────────────────
+    async def trigger_drop(self, guild_id: int) -> str:
+        """Called by admin.py /droptrigger. Returns a status string."""
+        if guild_id in self._active:
+            return ERR_DROP_ACTIVE
 
-    @app_commands.command(
-        name=CMD_DROP_CREATE,
-        description="[Admin] Create a new XP drop that users can answer for XP.",
-    )
-    @app_commands.describe(
-        question="The question users must answer.",
-        answer="The correct answer (case-insensitive).",
-        xp="XP reward for the winner.",
-    )
-    @app_commands.guild_only()
-    async def dropcreate(
-        self,
-        interaction: discord.Interaction,
-        question: str,
-        answer: str,
-        xp: int = DROPS_DEFAULT_XP,
-    ) -> None:
-        if not isinstance(interaction.user, discord.Member) or not _is_admin(interaction.user):
-            await interaction.response.send_message(
-                embed=discord.Embed(description=ERR_NO_PERMISSION, color=BOT_ERROR_COLOR),
-                ephemeral=True,
-            )
-            return
-        assert interaction.guild
-
-        cfg = await self.db.get_config(interaction.guild.id)
-        channel_id = cfg["drops_channel"] if cfg else None
-        if not channel_id:
-            await interaction.response.send_message(
-                embed=discord.Embed(
-                    description="❌ No drops channel set. Use `/setdropschannel` first.",
-                    color=BOT_ERROR_COLOR,
-                ),
-                ephemeral=True,
-            )
-            return
-
-        await self.db.create_drop(
-            guild_id=interaction.guild.id,
-            channel_id=channel_id,
-            question=question,
-            answer=answer.strip().lower(),
-            xp_amount=max(1, xp),
-            created_at=time.time(),
-        )
-        await interaction.response.send_message(
-            embed=discord.Embed(description=DROP_CREATED, color=BOT_SUCCESS_COLOR),
-            ephemeral=True,
-        )
-
-    @app_commands.command(
-        name=CMD_DROP_TRIGGER,
-        description="[Admin] Post the next queued XP drop now.",
-    )
-    @app_commands.guild_only()
-    async def droptrigger(self, interaction: discord.Interaction) -> None:
-        if not isinstance(interaction.user, discord.Member) or not _is_admin(interaction.user):
-            await interaction.response.send_message(
-                embed=discord.Embed(description=ERR_NO_PERMISSION, color=BOT_ERROR_COLOR),
-                ephemeral=True,
-            )
-            return
-        assert interaction.guild
-        gid = interaction.guild.id
-
-        if gid in self._active:
-            await interaction.response.send_message(
-                embed=discord.Embed(description=ERR_DROP_ACTIVE, color=BOT_WARN_COLOR),
-                ephemeral=True,
-            )
-            return
-
-        drop = await self.db.get_unposted_drop(gid)
+        drop = await self.db.get_unposted_drop(guild_id)
         if not drop:
-            await interaction.response.send_message(
-                embed=discord.Embed(
-                    description=ERR_NO_DROP + " Create one with `/dropcreate`.",
-                    color=BOT_WARN_COLOR,
-                ),
-                ephemeral=True,
-            )
-            return
+            return ERR_NO_DROP + " Create one with `/dropcreate`."
 
-        ok = await self._post_drop(gid, drop)
-        if ok:
-            await interaction.response.send_message(
-                embed=discord.Embed(description="✅ Drop posted!", color=BOT_SUCCESS_COLOR),
-                ephemeral=True,
-            )
-        else:
-            await interaction.response.send_message(
-                embed=discord.Embed(
-                    description="❌ Failed to post drop. Is the drops channel set correctly?",
-                    color=BOT_ERROR_COLOR,
-                ),
-                ephemeral=True,
-            )
+        ok = await self._post_drop(guild_id, drop)
+        return "✅ Drop posted!" if ok else "❌ Failed to post — is the drops channel set correctly?"
 
     # ── message listener ──────────────────────────────────────────────────────
 
@@ -209,11 +110,9 @@ class Drops(commands.Cog, name="Drops"):
             self._drop_expiry.pop(gid, None)
             return
 
-        # Check if the channel matches
         if message.channel.id != drop["channel_id"]:
             return
 
-        # Check answer (case-insensitive, stripped)
         if message.content.strip().lower() != drop["answer"]:
             return
 
@@ -222,7 +121,6 @@ class Drops(commands.Cog, name="Drops"):
         self._active.pop(gid, None)
         self._drop_expiry.pop(gid, None)
 
-        # Award XP
         now = time.time()
         await self.db.add_xp(gid, message.author.id, drop["xp_amount"], now, is_message=False)
         week = current_week()
@@ -284,7 +182,6 @@ class Drops(commands.Cog, name="Drops"):
             if interval <= 0:
                 continue
 
-            # Use bot_meta to track last auto-drop time per guild
             meta_key = f"last_auto_drop_{gid}"
             last_str = await self.db.get_meta(meta_key)
             last_ts = float(last_str) if last_str else 0.0

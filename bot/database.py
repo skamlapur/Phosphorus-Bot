@@ -167,6 +167,14 @@ class Database:
                 value TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS permits (
+                guild_id     INTEGER NOT NULL,
+                command_name TEXT    NOT NULL,
+                entity_type  TEXT    NOT NULL,
+                entity_id    INTEGER NOT NULL,
+                PRIMARY KEY (guild_id, command_name, entity_type, entity_id)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_users_guild_xp
                 ON users (guild_id, xp DESC);
             CREATE INDEX IF NOT EXISTS idx_weekly_guild_week_xp
@@ -725,6 +733,75 @@ class Database:
             (winner_id, claimed_at, drop_id),
         )
         await self._conn.commit()
+
+    # ── permits ───────────────────────────────────────────────────────────────
+
+    async def add_permit(
+        self, guild_id: int, command_name: str, entity_type: str, entity_id: int
+    ) -> None:
+        assert self._conn
+        await self._conn.execute(
+            "INSERT OR IGNORE INTO permits (guild_id, command_name, entity_type, entity_id) "
+            "VALUES (?,?,?,?)",
+            (guild_id, command_name, entity_type, entity_id),
+        )
+        await self._conn.commit()
+
+    async def remove_permit(
+        self, guild_id: int, command_name: str, entity_type: str, entity_id: int
+    ) -> bool:
+        assert self._conn
+        cur = await self._conn.execute(
+            "DELETE FROM permits WHERE guild_id=? AND command_name=? "
+            "AND entity_type=? AND entity_id=?",
+            (guild_id, command_name, entity_type, entity_id),
+        )
+        await self._conn.commit()
+        return cur.rowcount > 0
+
+    async def get_permits(
+        self, guild_id: int, command_name: Optional[str] = None
+    ) -> list[aiosqlite.Row]:
+        assert self._conn
+        if command_name:
+            async with self._conn.execute(
+                "SELECT * FROM permits WHERE guild_id=? AND command_name=? "
+                "ORDER BY command_name, entity_type, entity_id",
+                (guild_id, command_name),
+            ) as cur:
+                return list(await cur.fetchall())
+        async with self._conn.execute(
+            "SELECT * FROM permits WHERE guild_id=? "
+            "ORDER BY command_name, entity_type, entity_id",
+            (guild_id,),
+        ) as cur:
+            return list(await cur.fetchall())
+
+    async def has_permit(
+        self,
+        guild_id: int,
+        command_name: str,
+        user_id: int,
+        role_ids: list[int],
+    ) -> bool:
+        assert self._conn
+        async with self._conn.execute(
+            "SELECT 1 FROM permits WHERE guild_id=? AND command_name=? "
+            "AND entity_type='user' AND entity_id=?",
+            (guild_id, command_name, user_id),
+        ) as cur:
+            if await cur.fetchone():
+                return True
+        if role_ids:
+            placeholders = ",".join("?" * len(role_ids))
+            async with self._conn.execute(
+                f"SELECT 1 FROM permits WHERE guild_id=? AND command_name=? "
+                f"AND entity_type='role' AND entity_id IN ({placeholders})",
+                (guild_id, command_name, *role_ids),
+            ) as cur:
+                if await cur.fetchone():
+                    return True
+        return False
 
     # ── bot meta ──────────────────────────────────────────────────────────────
 

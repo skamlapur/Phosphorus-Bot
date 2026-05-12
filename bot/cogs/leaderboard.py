@@ -191,5 +191,45 @@ class Leaderboard(commands.Cog, name="Leaderboard"):
         await interaction.followup.send(embed=embed, view=view)
 
 
+    # ── prefix command ────────────────────────────────────────────────────────
+
+    @commands.command(name=CMD_LEADERBOARD, aliases=["lb", "top", "ranks"])
+    @commands.guild_only()
+    async def leaderboard_prefix(
+        self,
+        ctx: commands.Context,
+        lb_type: str = "xp",
+    ) -> None:
+        lb_type = lb_type.lower()
+        if lb_type not in LB_META:
+            valid = ", ".join(f"`{k}`" for k in LB_META)
+            await ctx.send(
+                embed=discord.Embed(
+                    description=f"❌ Unknown type. Choose from: {valid}",
+                    color=BOT_ERROR_COLOR,
+                )
+            )
+            return
+        async with ctx.typing():
+            assert ctx.guild
+            is_weekly = lb_type.startswith("weekly_")
+            week = current_week()
+            if is_weekly:
+                total = await self.db.get_weekly_member_count(ctx.guild.id, week)
+            else:
+                total = await self.db.get_guild_member_count(ctx.guild.id)
+            if total == 0:
+                await ctx.send(
+                    embed=discord.Embed(
+                        description="No data yet. Start chatting!",
+                        color=BOT_ERROR_COLOR,
+                    )
+                )
+                return
+            view = LeaderboardView(self.bot, ctx.guild, lb_type, total, ctx.author.id)
+            embed = await view.build_embed()
+            await ctx.send(embed=embed, view=view)
+
+
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Leaderboard(bot))

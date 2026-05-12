@@ -10,7 +10,7 @@ _BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 # Bot metadata
 # ──────────────────────────────────────────────
 BOT_NAME = "Phosphorus"
-BOT_VERSION = "2.0.0"
+BOT_VERSION = "2.1.0"
 BOT_COLOR = 0x7289DA
 BOT_SUCCESS_COLOR = 0x57F287
 BOT_ERROR_COLOR = 0xED4245
@@ -89,6 +89,7 @@ COGS = [
     "cogs.drops",
     "cogs.weekly",
     "cogs.streaks",
+    "cogs.help",
 ]
 
 # ──────────────────────────────────────────────
@@ -97,6 +98,8 @@ COGS = [
 CMD_PREFIX = "p!"
 CMD_RANK = "rank"
 CMD_LEADERBOARD = "leaderboard"
+CMD_STREAK = "streak"
+CMD_HELP = "help"
 CMD_LEVEL_RESET = "resetxp"
 CMD_LEVEL_SET = "setlevel"
 CMD_GIVE_XP = "givexp"
@@ -113,7 +116,19 @@ CMD_BLACKLIST = "blacklist"
 CMD_ENTITY_MULT = "multiplier"
 CMD_DROP_CREATE = "dropcreate"
 CMD_DROP_TRIGGER = "droptrigger"
-CMD_STREAK = "streak"
+CMD_PERMIT = "permit"
+
+# All admin command names used for the permit system
+ADMIN_COMMANDS = [
+    "resetxp", "setlevel", "givexp", "takexp",
+    "setchannel", "setweekchannel", "setdropschannel",
+    "setmultiplier",
+    "multiplier set", "multiplier remove", "multiplier list",
+    "blacklist add", "blacklist remove", "blacklist list",
+    "addrolereward", "removerolereward", "listroles",
+    "voicexp", "dropcreate", "droptrigger", "dropsenable",
+    "config",
+]
 
 # ──────────────────────────────────────────────
 # Progress bar
@@ -151,7 +166,10 @@ DROP_ANNOUNCED = "❓ **XP Drop!** First to answer wins **{xp} XP**!\n\n{questio
 DROP_CLAIMED = "🎉 **{user}** answered correctly and won **{xp} XP**!"
 DROP_EXPIRED = "⏰ The XP drop expired — no one claimed it."
 DROP_CREATED = "✅ Drop created. Use `/droptrigger` to post it, or it will auto-post if drops are enabled."
-ERR_NO_PERMISSION = "❌ You need **Manage Server** (or **Administrator**) to use this."
+ERR_NO_PERMISSION = "❌ You need **Manage Server**, **Administrator**, or a command permit to use this."
+PERMIT_SET = "✅ Granted `{cmd}` access to {type} `{id}`."
+PERMIT_REMOVED = "✅ Removed `{cmd}` permit for {type} `{id}`."
+PERMIT_NOT_FOUND = "⚠️ No matching permit found."
 ERR_INVALID_LEVEL = "❌ Level must be a positive integer."
 ERR_INVALID_MULT = "❌ Multiplier must be a positive number (e.g. `1.5`)."
 ERR_USER_NOT_FOUND = "❌ That user has no XP records in this server."

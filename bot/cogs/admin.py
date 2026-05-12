@@ -1,7 +1,7 @@
 """
-Phosphorus – Admin cog (v2)
+Phosphorus – Admin cog (v2.1)
 Full suite of admin commands: XP management, config, blacklist,
-per-entity multipliers, role rewards, drops, voice toggle.
+per-entity multipliers, role rewards, drops, voice toggle, permit system.
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from constants import (
+    ADMIN_COMMANDS,
     BLACKLIST_ADD,
     BLACKLIST_REMOVE,
     BOT_COLOR,
@@ -27,6 +28,7 @@ from constants import (
     CMD_GIVE_XP,
     CMD_LEVEL_RESET,
     CMD_LEVEL_SET,
+    CMD_PERMIT,
     CMD_ROLE_REWARD_ADD,
     CMD_ROLE_REWARD_LIST,
     CMD_ROLE_REWARD_REMOVE,
@@ -44,6 +46,9 @@ from constants import (
     ERR_NO_PERMISSION,
     GIVE_XP_SUCCESS,
     MULTIPLIER_SET_SUCCESS,
+    PERMIT_NOT_FOUND,
+    PERMIT_REMOVED,
+    PERMIT_SET,
     RESET_SUCCESS,
     ROLE_ADDED_SUCCESS,
     ROLE_REMOVED_SUCCESS,
@@ -68,9 +73,40 @@ class Admin(commands.Cog, name="Admin"):
         self.db: Database = bot.db  # type: ignore[attr-defined]
 
     async def _guard(self, interaction: discord.Interaction) -> bool:
-        if not isinstance(interaction.user, discord.Member) or not _is_admin(interaction.user):
+        """Return True if the invoker may run this admin command.
+
+        Passes if the member has Manage Server / Administrator,
+        OR has a permit explicitly granted for this command.
+        """
+        if not isinstance(interaction.user, discord.Member):
             await interaction.response.send_message(
                 embed=discord.Embed(description=ERR_NO_PERMISSION, color=BOT_ERROR_COLOR),
+                ephemeral=True,
+            )
+            return False
+
+        member = interaction.user
+
+        if _is_admin(member):
+            return True
+
+        assert interaction.guild
+        cmd_name = interaction.command.qualified_name if interaction.command else ""
+        role_ids = [r.id for r in member.roles]
+        if await self.db.has_permit(interaction.guild.id, cmd_name, member.id, role_ids):
+            return True
+
+        await interaction.response.send_message(
+            embed=discord.Embed(description=ERR_NO_PERMISSION, color=BOT_ERROR_COLOR),
+            ephemeral=True,
+        )
+        return False
+
+    async def _admin_only_guard(self, interaction: discord.Interaction) -> bool:
+        """Strict guard — only Manage Server / Administrator (no permits)."""
+        if not isinstance(interaction.user, discord.Member) or not _is_admin(interaction.user):
+            await interaction.response.send_message(
+                embed=discord.Embed(description="❌ Only server administrators can manage permits.", color=BOT_ERROR_COLOR),
                 ephemeral=True,
             )
             return False
@@ -487,7 +523,65 @@ class Admin(commands.Cog, name="Admin"):
             embed=discord.Embed(description=f"Voice XP is now **{state}**.", color=BOT_SUCCESS_COLOR)
         )
 
-    # ── drops toggle ──────────────────────────────────────────────────────────
+    # ── drops ─────────────────────────────────────────────────────────────────
+
+    @app_commands.command(name=CMD_DROP_CREATE, description="[Admin] Create a queued XP drop/trivia question.")
+    @app_commands.describe(
+        question="The question to ask.",
+        answer="The correct answer (case-insensitive).",
+        xp="XP reward (default from config).",
+    )
+    @app_commands.guild_only()
+    async def dropcreate(
+        self,
+        interaction: discord.Interaction,
+        question: str,
+        answer: str,
+        xp: int = 300,
+    ) -> None:
+        if not await self._guard(interaction):
+            return
+        assert interaction.guild
+        cfg = await self.db.get_config(interaction.guild.id)
+        if not cfg or not cfg["drops_channel"]:
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    description="❌ Set a drops channel first with `/setdropschannel`.",
+                    color=BOT_ERROR_COLOR,
+                ),
+                ephemeral=True,
+            )
+            return
+        import time
+        await self.db.create_drop(
+            interaction.guild.id, cfg["drops_channel"], question, answer.strip().lower(), max(1, xp), time.time()
+        )
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                description="✅ Drop created. Use `/droptrigger` to post it, or it will auto-post if drops are enabled.",
+                color=BOT_SUCCESS_COLOR,
+            )
+        )
+
+    @app_commands.command(name="droptrigger", description="[Admin] Post the next queued XP drop immediately.")
+    @app_commands.guild_only()
+    async def droptrigger(self, interaction: discord.Interaction) -> None:
+        if not await self._guard(interaction):
+            return
+        assert interaction.guild
+        drops_cog = self.bot.get_cog("Drops")
+        if not drops_cog:
+            await interaction.response.send_message(
+                embed=discord.Embed(description="❌ Drops system unavailable.", color=BOT_ERROR_COLOR),
+                ephemeral=True,
+            )
+            return
+        result = await drops_cog.trigger_drop(interaction.guild.id)  # type: ignore[attr-defined]
+        color = BOT_SUCCESS_COLOR if result.startswith("✅") else BOT_WARN_COLOR
+        await interaction.response.send_message(
+            embed=discord.Embed(description=result, color=color),
+            ephemeral=True,
+        )
 
     @app_commands.command(name="dropsenable", description="[Admin] Enable or disable auto XP drops.")
     @app_commands.describe(enabled="True to enable auto-drops.")
@@ -528,6 +622,124 @@ class Admin(commands.Cog, name="Admin"):
         embed.add_field(name="Server XP Multiplier", value=f"**{cfg['xp_multiplier'] if cfg else 1.0}x**", inline=True)
         embed.add_field(name="Voice XP", value="✅ Enabled" if (not cfg or cfg["voice_xp_enabled"]) else "❌ Disabled", inline=True)
         embed.add_field(name="Auto Drops", value="✅ Enabled" if (cfg and cfg["drops_enabled"]) else "❌ Disabled", inline=True)
+        embed.set_footer(text=EMBED_FOOTER)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    # ── permit system ─────────────────────────────────────────────────────────
+
+    permit_group = app_commands.Group(
+        name=CMD_PERMIT,
+        description="Grant specific users or roles access to individual admin commands.",
+        guild_only=True,
+    )
+
+    @permit_group.command(name="set", description="[Admin] Grant a role or user access to a specific command.")
+    @app_commands.describe(
+        command="The admin command name to permit.",
+        entity_type="Whether to grant to a role or user.",
+        entity_id="The ID of the role or user.",
+    )
+    @app_commands.choices(
+        command=[app_commands.Choice(name=c, value=c) for c in ADMIN_COMMANDS],
+        entity_type=[
+            app_commands.Choice(name="Role", value="role"),
+            app_commands.Choice(name="User", value="user"),
+        ],
+    )
+    async def permit_set(
+        self,
+        interaction: discord.Interaction,
+        command: str,
+        entity_type: str,
+        entity_id: str,
+    ) -> None:
+        if not await self._admin_only_guard(interaction):
+            return
+        try:
+            eid = int(entity_id)
+        except ValueError:
+            await interaction.response.send_message(
+                embed=discord.Embed(description="❌ Invalid ID — must be a number.", color=BOT_ERROR_COLOR),
+                ephemeral=True,
+            )
+            return
+        assert interaction.guild
+        await self.db.add_permit(interaction.guild.id, command, entity_type, eid)
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                description=PERMIT_SET.format(cmd=command, type=entity_type, id=entity_id),
+                color=BOT_SUCCESS_COLOR,
+            )
+        )
+
+    @permit_group.command(name="remove", description="[Admin] Remove a command permit from a role or user.")
+    @app_commands.describe(
+        command="The command whose permit to remove.",
+        entity_type="Role or user.",
+        entity_id="The ID of the role or user.",
+    )
+    @app_commands.choices(
+        command=[app_commands.Choice(name=c, value=c) for c in ADMIN_COMMANDS],
+        entity_type=[
+            app_commands.Choice(name="Role", value="role"),
+            app_commands.Choice(name="User", value="user"),
+        ],
+    )
+    async def permit_remove(
+        self,
+        interaction: discord.Interaction,
+        command: str,
+        entity_type: str,
+        entity_id: str,
+    ) -> None:
+        if not await self._admin_only_guard(interaction):
+            return
+        try:
+            eid = int(entity_id)
+        except ValueError:
+            await interaction.response.send_message(
+                embed=discord.Embed(description="❌ Invalid ID.", color=BOT_ERROR_COLOR),
+                ephemeral=True,
+            )
+            return
+        assert interaction.guild
+        removed = await self.db.remove_permit(interaction.guild.id, command, entity_type, eid)
+        color = BOT_SUCCESS_COLOR if removed else BOT_WARN_COLOR
+        desc = (
+            PERMIT_REMOVED.format(cmd=command, type=entity_type, id=entity_id)
+            if removed else PERMIT_NOT_FOUND
+        )
+        await interaction.response.send_message(
+            embed=discord.Embed(description=desc, color=color)
+        )
+
+    @permit_group.command(name="list", description="[Admin] List all active command permits.")
+    @app_commands.describe(command="Filter by command (optional).")
+    @app_commands.choices(
+        command=[app_commands.Choice(name=c, value=c) for c in ADMIN_COMMANDS],
+    )
+    async def permit_list(
+        self,
+        interaction: discord.Interaction,
+        command: str | None = None,
+    ) -> None:
+        if not await self._admin_only_guard(interaction):
+            return
+        assert interaction.guild
+        rows = await self.db.get_permits(interaction.guild.id, command)
+        if not rows:
+            desc = "No permits configured" + (f" for `{command}`" if command else "") + "."
+            await interaction.response.send_message(
+                embed=discord.Embed(description=desc, color=BOT_WARN_COLOR),
+                ephemeral=True,
+            )
+            return
+        lines = [
+            f"`{r['command_name']}` → **{r['entity_type']}** `{r['entity_id']}`"
+            for r in rows
+        ]
+        title = f"🔑 Permits" + (f" — {command}" if command else "")
+        embed = discord.Embed(title=title, description="\n".join(lines), color=BOT_COLOR)
         embed.set_footer(text=EMBED_FOOTER)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 

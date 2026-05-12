@@ -1,6 +1,6 @@
 """
-Phosphorus – Streaks cog
-Slash command: /streak [member]
+Phosphorus – Streaks cog (v2.1)
+/streak [member]  and  p!streak [member]
 """
 from __future__ import annotations
 
@@ -31,43 +31,29 @@ class Streaks(commands.Cog, name="Streaks"):
         self.bot = bot
         self.db: Database = bot.db  # type: ignore[attr-defined]
 
-    @app_commands.command(
-        name=CMD_STREAK,
-        description="Check your daily XP streak (or another member's).",
-    )
-    @app_commands.describe(member="The member to check (default: you).")
-    @app_commands.guild_only()
-    async def streak(
+    # ── shared embed builder ──────────────────────────────────────────────────
+
+    async def _make_embed(
         self,
-        interaction: discord.Interaction,
-        member: discord.Member | None = None,
-    ) -> None:
-        await interaction.response.defer(thinking=True)
-        assert interaction.guild
-
-        target = member or interaction.user
-        if not isinstance(target, discord.Member):
-            target = interaction.guild.get_member(target.id) or target
-
-        row = await self.db.get_streak(interaction.guild.id, target.id)
+        target: discord.Member | discord.User,
+        requester: discord.Member | discord.User,
+        guild_id: int,
+    ) -> discord.Embed:
+        row = await self.db.get_streak(guild_id, target.id)
 
         if not row or row["current_streak"] == 0:
-            embed = discord.Embed(
-                description=(
-                    "You haven't started a streak yet. Chat every day to build one!"
-                    if target == interaction.user
-                    else f"**{target.display_name}** doesn't have an active streak yet."
-                ),
-                color=BOT_ERROR_COLOR,
+            is_self = target.id == requester.id
+            desc = (
+                "You haven't started a streak yet. Chat every day to build one!"
+                if is_self
+                else f"**{target.display_name}** doesn't have an active streak yet."
             )
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            return
+            return discord.Embed(description=desc, color=BOT_ERROR_COLOR)
 
         current = row["current_streak"]
         longest = row["longest_streak"]
         last = row["last_active_date"]
 
-        # Compute streak bonus
         if current >= STREAK_BONUS_THRESHOLD:
             bonus = min((current - STREAK_BONUS_THRESHOLD) * STREAK_BONUS_MULTIPLIER, STREAK_BONUS_MAX)
             bonus_str = f"+{round(bonus * 100)}% XP bonus active 🔥"
@@ -75,7 +61,6 @@ class Streaks(commands.Cog, name="Streaks"):
             days_left = STREAK_BONUS_THRESHOLD - current
             bonus_str = f"{days_left} more day(s) until streak bonus kicks in"
 
-        # Flame emoji scale
         if current >= 30:
             flame = "🔥🔥🔥"
         elif current >= 14:
@@ -95,8 +80,46 @@ class Streaks(commands.Cog, name="Streaks"):
         embed.add_field(name="Streak Bonus", value=bonus_str, inline=False)
         embed.set_thumbnail(url=target.display_avatar.url)
         embed.set_footer(text=EMBED_FOOTER)
+        return embed
 
-        await interaction.followup.send(embed=embed)
+    # ── slash command ─────────────────────────────────────────────────────────
+
+    @app_commands.command(
+        name=CMD_STREAK,
+        description="Check your daily XP streak (or another member's).",
+    )
+    @app_commands.describe(member="The member to check (default: you).")
+    @app_commands.guild_only()
+    async def streak_slash(
+        self,
+        interaction: discord.Interaction,
+        member: discord.Member | None = None,
+    ) -> None:
+        await interaction.response.defer(thinking=True)
+        assert interaction.guild
+
+        target = member or interaction.user
+        if not isinstance(target, discord.Member):
+            target = interaction.guild.get_member(target.id) or target
+
+        embed = await self._make_embed(target, interaction.user, interaction.guild.id)
+        ephemeral = embed.color == BOT_ERROR_COLOR
+        await interaction.followup.send(embed=embed, ephemeral=ephemeral)
+
+    # ── prefix command ────────────────────────────────────────────────────────
+
+    @commands.command(name=CMD_STREAK, aliases=["str", "daily"])
+    @commands.guild_only()
+    async def streak_prefix(
+        self,
+        ctx: commands.Context,
+        member: discord.Member | None = None,
+    ) -> None:
+        async with ctx.typing():
+            target = member or ctx.author
+            assert ctx.guild
+            embed = await self._make_embed(target, ctx.author, ctx.guild.id)
+            await ctx.send(embed=embed)
 
 
 async def setup(bot: commands.Bot) -> None:
