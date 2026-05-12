@@ -1,6 +1,6 @@
 """
-Phosphorus – Leaderboard cog
-Slash command: /leaderboard [page]
+Phosphorus – Leaderboard cog (v2)
+/leaderboard with 6 types: xp, messages, voice, weekly_xp, weekly_messages, weekly_voice
 """
 from __future__ import annotations
 
@@ -19,21 +19,29 @@ from constants import (
     LEADERBOARD_PAGE_SIZE,
     LB_TITLE,
 )
-from database import Database, level_from_xp
+from database import Database, current_week, level_from_xp
 
 log = logging.getLogger(__name__)
 
-# Medals for top 3 spots
 MEDALS = {1: "🥇", 2: "🥈", 3: "🥉"}
+
+LB_META = {
+    "xp":             ("🏆 All-Time XP",             "xp",           "XP"),
+    "messages":       ("💬 All-Time Messages",        "msg_count",    "msgs"),
+    "voice":          ("🎙️ All-Time Voice",           "voice_minutes","min"),
+    "weekly_xp":      ("📅 Weekly XP",                "xp",           "XP"),
+    "weekly_messages":("📅 Weekly Messages",          "messages",     "msgs"),
+    "weekly_voice":   ("📅 Weekly Voice",             "voice_minutes","min"),
+}
 
 
 class LeaderboardView(discord.ui.View):
-    """Paginated leaderboard using Discord buttons."""
 
     def __init__(
         self,
         bot: commands.Bot,
         guild: discord.Guild,
+        lb_type: str,
         total: int,
         requester_id: int,
     ) -> None:
@@ -41,12 +49,13 @@ class LeaderboardView(discord.ui.View):
         self.bot = bot
         self.db: Database = bot.db  # type: ignore[attr-defined]
         self.guild = guild
+        self.lb_type = lb_type
         self.total = total
         self.requester_id = requester_id
         self.page = 1
         self.max_pages = min(
             LEADERBOARD_MAX_PAGES,
-            max(1, -(-total // LEADERBOARD_PAGE_SIZE)),  # ceiling div
+            max(1, -(-total // LEADERBOARD_PAGE_SIZE)),
         )
         self._update_buttons()
 
@@ -56,18 +65,29 @@ class LeaderboardView(discord.ui.View):
 
     async def build_embed(self) -> discord.Embed:
         offset = (self.page - 1) * LEADERBOARD_PAGE_SIZE
-        rows = await self.db.get_leaderboard(
-            self.guild.id, LEADERBOARD_PAGE_SIZE, offset
-        )
+        is_weekly = self.lb_type.startswith("weekly_")
+
+        title_label, sort_col, unit = LB_META[self.lb_type]
+        week = current_week()
+
+        if is_weekly:
+            rows = await self.db.get_weekly_leaderboard(
+                self.guild.id, week, sort_col, LEADERBOARD_PAGE_SIZE, offset
+            )
+        else:
+            rows = await self.db.get_leaderboard(
+                self.guild.id, sort_col, LEADERBOARD_PAGE_SIZE, offset
+            )
 
         embed = discord.Embed(
-            title=LB_TITLE.format(guild=self.guild.name),
+            title=LB_TITLE.format(guild=self.guild.name) + f" — {title_label}",
             color=BOT_COLOR,
         )
-        embed.set_thumbnail(url=self.guild.icon.url if self.guild.icon else discord.Embed.Empty)
+        if self.guild.icon:
+            embed.set_thumbnail(url=self.guild.icon.url)
 
         if not rows:
-            embed.description = "No one has earned XP yet. Start chatting!"
+            embed.description = "No data yet. Start chatting!"
             embed.set_footer(text=EMBED_FOOTER)
             return embed
 
@@ -76,48 +96,42 @@ class LeaderboardView(discord.ui.View):
             global_rank = offset + i + 1
             medal = MEDALS.get(global_rank, f"`#{global_rank}`")
             member = self.guild.get_member(row["user_id"])
-            name = member.display_name if member else f"Unknown ({row['user_id']})"
-            level = level_from_xp(row["xp"])
-            lines.append(
-                f"{medal} **{name}** — Level **{level}** · {row['xp']:,} XP"
-            )
+            name = member.display_name if member else f"User {row['user_id']}"
+            value = row[sort_col]
+            level = level_from_xp(row["xp"]) if self.lb_type in ("xp", "weekly_xp") else None
+            level_str = f" · Lvl **{level}**" if level is not None else ""
+            lines.append(f"{medal} **{name}**{level_str} — {value:,} {unit}")
 
         embed.description = "\n".join(lines)
         embed.set_footer(
             text=f"{EMBED_FOOTER} · Page {self.page}/{self.max_pages}"
+            + (f" · Week {week}" if is_weekly else "")
         )
         return embed
 
     async def _check_requester(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.requester_id:
             await interaction.response.send_message(
-                "Only the person who ran this command can change pages.",
-                ephemeral=True,
+                "Only the person who ran this command can turn pages.", ephemeral=True
             )
             return False
         return True
 
     @discord.ui.button(label="◀ Prev", style=discord.ButtonStyle.secondary)
-    async def prev_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
+    async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if not await self._check_requester(interaction):
             return
         self.page -= 1
         self._update_buttons()
-        embed = await self.build_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.response.edit_message(embed=await self.build_embed(), view=self)
 
     @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.secondary)
-    async def next_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if not await self._check_requester(interaction):
             return
         self.page += 1
         self._update_buttons()
-        embed = await self.build_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.response.edit_message(embed=await self.build_embed(), view=self)
 
     async def on_timeout(self) -> None:
         for item in self.children:
@@ -126,7 +140,6 @@ class LeaderboardView(discord.ui.View):
 
 
 class Leaderboard(commands.Cog, name="Leaderboard"):
-    """Guild XP leaderboard."""
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -134,26 +147,46 @@ class Leaderboard(commands.Cog, name="Leaderboard"):
 
     @app_commands.command(
         name=CMD_LEADERBOARD,
-        description="Show the XP leaderboard for this server.",
+        description="Show the server leaderboard. Choose from 6 ranking types.",
     )
+    @app_commands.describe(
+        type="Which leaderboard to show.",
+    )
+    @app_commands.choices(type=[
+        app_commands.Choice(name="🏆 All-Time XP",          value="xp"),
+        app_commands.Choice(name="💬 All-Time Messages",     value="messages"),
+        app_commands.Choice(name="🎙️ All-Time Voice",        value="voice"),
+        app_commands.Choice(name="📅 Weekly XP",             value="weekly_xp"),
+        app_commands.Choice(name="📅 Weekly Messages",       value="weekly_messages"),
+        app_commands.Choice(name="📅 Weekly Voice",          value="weekly_voice"),
+    ])
     @app_commands.guild_only()
-    async def leaderboard(self, interaction: discord.Interaction) -> None:
+    async def leaderboard(
+        self,
+        interaction: discord.Interaction,
+        type: str = "xp",
+    ) -> None:
         await interaction.response.defer(thinking=True)
         assert interaction.guild
 
-        total = await self.db.get_guild_member_count(interaction.guild.id)
+        is_weekly = type.startswith("weekly_")
+        week = current_week()
+
+        if is_weekly:
+            total = await self.db.get_weekly_member_count(interaction.guild.id, week)
+        else:
+            total = await self.db.get_guild_member_count(interaction.guild.id)
+
         if total == 0:
             await interaction.followup.send(
                 embed=discord.Embed(
-                    description="No one has earned XP in this server yet.",
+                    description="No data yet for this leaderboard. Start chatting!",
                     color=BOT_ERROR_COLOR,
                 )
             )
             return
 
-        view = LeaderboardView(
-            self.bot, interaction.guild, total, interaction.user.id
-        )
+        view = LeaderboardView(self.bot, interaction.guild, type, total, interaction.user.id)
         embed = await view.build_embed()
         await interaction.followup.send(embed=embed, view=view)
 

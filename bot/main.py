@@ -1,5 +1,5 @@
 """
-Phosphorus – Discord Leveling Bot
+Phosphorus – Discord Leveling Bot  v2
 Entry point: loads cogs, connects to DB, starts the bot.
 """
 from __future__ import annotations
@@ -29,8 +29,8 @@ log = logging.getLogger(BOT_NAME)
 
 # ── intents ───────────────────────────────────────────────────────────────────
 intents = discord.Intents.default()
-intents.message_content = True   # needed to read message content for XP
-intents.members = True           # needed to assign roles on level-up
+intents.message_content = True
+intents.members = True
 intents.guilds = True
 intents.voice_states = True
 
@@ -41,7 +41,7 @@ class Phosphorus(commands.Bot):
         super().__init__(
             command_prefix=CMD_PREFIX,
             intents=intents,
-            help_command=None,           # replaced by custom /help
+            help_command=None,
             case_insensitive=True,
         )
         self.db = Database()
@@ -56,13 +56,13 @@ class Phosphorus(commands.Bot):
             except Exception as exc:
                 log.error("Failed to load cog %s: %s", cog, exc, exc_info=True)
         await self.tree.sync()
-        log.info("Slash commands synced.")
+        log.info("Slash commands synced globally.")
 
     async def on_ready(self) -> None:
         assert self.user
         log.info(
-            "%s v%s is online as %s (ID %d)",
-            BOT_NAME, BOT_VERSION, self.user, self.user.id,
+            "%s v%s online as %s (ID %d) — %d guild(s)",
+            BOT_NAME, BOT_VERSION, self.user, self.user.id, len(self.guilds),
         )
         await self.change_presence(
             activity=discord.Activity(
@@ -82,7 +82,7 @@ async def main() -> None:
     if not token:
         log.critical(
             "DISCORD_BOT_TOKEN is not set. "
-            "Add it to your .env file or Replit Secrets and restart."
+            "Add it to Replit Secrets and restart."
         )
         sys.exit(1)
 
