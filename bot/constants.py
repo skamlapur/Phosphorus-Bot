@@ -10,7 +10,7 @@ _BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 # Bot metadata
 # ──────────────────────────────────────────────
 BOT_NAME = "Phosphorus"
-BOT_VERSION = "2.1.0"
+BOT_VERSION = "2.2.0"
 BOT_COLOR = 0x7289DA
 BOT_SUCCESS_COLOR = 0x57F287
 BOT_ERROR_COLOR = 0xED4245
@@ -97,6 +97,7 @@ COGS = [
     "cogs.weekly",
     "cogs.streaks",
     "cogs.help",
+    "cogs.botinfo",
 ]
 
 # ──────────────────────────────────────────────
@@ -124,6 +125,7 @@ CMD_ENTITY_MULT = "multiplier"
 CMD_DROP_CREATE = "dropcreate"
 CMD_DROP_TRIGGER = "droptrigger"
 CMD_PERMIT  = "permit"
+CMD_BOTINFO = "botinfo"
 CMD_BOOSTER = "booster"
 
 # All admin command names used for the permit system
@@ -149,7 +151,7 @@ PROGRESS_EMPTY = "░"
 # ──────────────────────────────────────────────
 # Embed strings
 # ──────────────────────────────────────────────
-EMBED_FOOTER = f"{BOT_NAME} v{BOT_VERSION}"
+EMBED_FOOTER = BOT_NAME
 RANK_TITLE = "📊 {user}'s Profile"
 LB_TITLE = "🏆 {guild} Leaderboard"
 LEVELUP_TITLE = "🎉 Level Up!"

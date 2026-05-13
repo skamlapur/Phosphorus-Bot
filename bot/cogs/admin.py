@@ -1,11 +1,13 @@
 """
-Phosphorus – Admin cog (v2.1)
+Phosphorus – Admin cog (v2.2)
 Full suite of admin commands: XP management, config, blacklist,
-per-entity multipliers, role rewards, drops, voice toggle, permit system.
+per-entity multipliers, role rewards, drops, voice toggle, permit system,
+booster system.
 """
 from __future__ import annotations
 
 import logging
+import re
 from typing import Literal
 
 import discord
@@ -68,9 +70,37 @@ from database import Database, xp_for_level
 
 log = logging.getLogger(__name__)
 
+_MENTION_RE = re.compile(r"^<[@#]&?(\d+)>$")
+
 
 def _is_admin(member: discord.Member) -> bool:
     return member.guild_permissions.administrator or member.guild_permissions.manage_guild
+
+
+def _resolve_id(raw: str) -> int | None:
+    """Resolve a mention (`<@id>`, `<#id>`, `<@&id>`) or raw ID string to an integer ID."""
+    raw = raw.strip()
+    m = _MENTION_RE.match(raw)
+    if m:
+        return int(m.group(1))
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+def _format_entity(guild: discord.Guild, entity_type: str, entity_id: int) -> str:
+    """Resolve a stored entity ID into a Discord mention string for display."""
+    if entity_type == "user":
+        member = guild.get_member(entity_id)
+        return member.mention if member else f"Unknown user ({entity_id})"
+    if entity_type == "role":
+        role = guild.get_role(entity_id)
+        return role.mention if role else f"Deleted role ({entity_id})"
+    if entity_type == "channel":
+        ch = guild.get_channel(entity_id)
+        return ch.mention if ch else f"Deleted channel ({entity_id})"
+    return f"`{entity_id}`"
 
 
 class Admin(commands.Cog, name="Admin"):
@@ -120,7 +150,7 @@ class Admin(commands.Cog, name="Admin"):
             return False
         return True
 
-    # ── XP management ─────────────────────────────────────────────────────────
+    # ── XP management ───────────────────────────────────────────────────────────────────
 
     @app_commands.command(name=CMD_LEVEL_RESET, description="[Admin] Reset a member's XP to zero.")
     @app_commands.describe(member="Target member.")
@@ -204,7 +234,7 @@ class Admin(commands.Cog, name="Admin"):
             )
         )
 
-    # ── channel config ────────────────────────────────────────────────────────
+    # ── channel config ───────────────────────────────────────────────────────────────────
 
     @app_commands.command(name=CMD_SET_CHANNEL, description="[Admin] Set the level-up announcement channel.")
     @app_commands.describe(channel="Text channel for announcements.")
@@ -245,10 +275,13 @@ class Admin(commands.Cog, name="Admin"):
             embed=discord.Embed(description=desc, color=BOT_SUCCESS_COLOR)
         )
 
-    # ── multipliers ───────────────────────────────────────────────────────────
+    # ── server-wide multiplier ────────────────────────────────────────────────────────
 
-    @app_commands.command(name=CMD_SET_MULTIPLIER, description="[Admin] Set the server-wide XP multiplier.")
-    @app_commands.describe(multiplier="e.g. 2.0 for double XP. Must be > 0.")
+    @app_commands.command(
+        name=CMD_SET_MULTIPLIER,
+        description="[Admin] Set the global server-wide XP multiplier."
+    )
+    @app_commands.describe(multiplier="e.g. 2.0 for double XP on everything. Must be > 0.")
     @app_commands.guild_only()
     async def setmultiplier(self, interaction: discord.Interaction, multiplier: float) -> None:
         if not await self._guard(interaction):
@@ -268,18 +301,21 @@ class Admin(commands.Cog, name="Admin"):
             )
         )
 
-    # ── entity multipliers ────────────────────────────────────────────────────
+    # ── per-entity multipliers ────────────────────────────────────────────────────────────────────
 
     multiplier_group = app_commands.Group(
         name=CMD_ENTITY_MULT,
-        description="Manage per-role/channel/user XP multipliers.",
+        description="Manage per-role / per-channel / per-user XP multipliers.",
         guild_only=True,
     )
 
-    @multiplier_group.command(name="set", description="[Admin] Set an XP multiplier for a role, channel, or user.")
+    @multiplier_group.command(
+        name="set",
+        description="[Admin] Set a per-role / per-channel / per-user XP multiplier (overrides server multiplier).",
+    )
     @app_commands.describe(
         entity_type="What to apply the multiplier to.",
-        entity_id="The ID of the role, channel, or user.",
+        entity="A mention or ID of the role, channel, or user.",
         multiplier="Multiplier value (e.g. 1.5 = +50% XP).",
     )
     @app_commands.choices(entity_type=[
@@ -291,7 +327,7 @@ class Admin(commands.Cog, name="Admin"):
         self,
         interaction: discord.Interaction,
         entity_type: str,
-        entity_id: str,
+        entity: str,
         multiplier: float,
     ) -> None:
         if not await self._guard(interaction):
@@ -302,28 +338,28 @@ class Admin(commands.Cog, name="Admin"):
                 ephemeral=True,
             )
             return
-        try:
-            eid = int(entity_id)
-        except ValueError:
+        eid = _resolve_id(entity)
+        if eid is None:
             await interaction.response.send_message(
-                embed=discord.Embed(description="❌ Invalid ID — must be a number.", color=BOT_ERROR_COLOR),
+                embed=discord.Embed(description="❌ Invalid mention or ID.", color=BOT_ERROR_COLOR),
                 ephemeral=True,
             )
             return
         assert interaction.guild
         m = round(multiplier, 2)
         await self.db.set_entity_multiplier(interaction.guild.id, entity_type, eid, m)
+        label = _format_entity(interaction.guild, entity_type, eid)
         await interaction.response.send_message(
             embed=discord.Embed(
-                description=ENTITY_MULT_SET.format(mult=m, type=entity_type, id=entity_id),
+                description=ENTITY_MULT_SET.format(mult=m, type=entity_type, id=label),
                 color=BOT_SUCCESS_COLOR,
             )
         )
 
-    @multiplier_group.command(name="remove", description="[Admin] Remove an XP multiplier.")
+    @multiplier_group.command(name="remove", description="[Admin] Remove a per-entity XP multiplier.")
     @app_commands.describe(
         entity_type="Type of entity.",
-        entity_id="The ID of the role, channel, or user.",
+        entity="Mention or ID of the role, channel, or user.",
     )
     @app_commands.choices(entity_type=[
         app_commands.Choice(name="Role", value="role"),
@@ -334,27 +370,26 @@ class Admin(commands.Cog, name="Admin"):
         self,
         interaction: discord.Interaction,
         entity_type: str,
-        entity_id: str,
+        entity: str,
     ) -> None:
         if not await self._guard(interaction):
             return
-        try:
-            eid = int(entity_id)
-        except ValueError:
+        eid = _resolve_id(entity)
+        if eid is None:
             await interaction.response.send_message(
-                embed=discord.Embed(description="❌ Invalid ID.", color=BOT_ERROR_COLOR),
+                embed=discord.Embed(description="❌ Invalid mention or ID.", color=BOT_ERROR_COLOR),
                 ephemeral=True,
             )
             return
         assert interaction.guild
         removed = await self.db.remove_entity_multiplier(interaction.guild.id, entity_type, eid)
         color = BOT_SUCCESS_COLOR if removed else BOT_WARN_COLOR
-        desc = ENTITY_MULT_REMOVED.format(type=entity_type, id=entity_id) if removed else "⚠️ No multiplier found for that entity."
+        desc = ENTITY_MULT_REMOVED.format(type=entity_type, id=_format_entity(interaction.guild, entity_type, eid)) if removed else "⚠️ No multiplier found for that entity."
         await interaction.response.send_message(
             embed=discord.Embed(description=desc, color=color)
         )
 
-    @multiplier_group.command(name="list", description="[Admin] List all entity multipliers.")
+    @multiplier_group.command(name="list", description="[Admin] List all per-entity XP multipliers.")
     async def multiplier_list(self, interaction: discord.Interaction) -> None:
         if not await self._guard(interaction):
             return
@@ -366,12 +401,15 @@ class Admin(commands.Cog, name="Admin"):
                 ephemeral=True,
             )
             return
-        lines = [f"**{r['entity_type']}** `{r['entity_id']}` → **{r['multiplier']}x**" for r in rows]
+        lines = [
+            f"**{r['entity_type']}** {_format_entity(interaction.guild, r['entity_type'], r['entity_id'])} → **{r['multiplier']}x**"
+            for r in rows
+        ]
         embed = discord.Embed(title="⚡ Entity Multipliers", description="\n".join(lines), color=BOT_COLOR)
         embed.set_footer(text=EMBED_FOOTER)
         await interaction.response.send_message(embed=embed)
 
-    # ── blacklist ─────────────────────────────────────────────────────────────
+    # ── blacklist ───────────────────────────────────────────────────────────────────
 
     blacklist_group = app_commands.Group(
         name=CMD_BLACKLIST,
@@ -382,7 +420,7 @@ class Admin(commands.Cog, name="Admin"):
     @blacklist_group.command(name="add", description="[Admin] Block a user, role, or channel from earning XP.")
     @app_commands.describe(
         entity_type="What kind of entity to blacklist.",
-        entity_id="The ID of the user, role, or channel.",
+        entity="Mention or ID of the user, role, or channel.",
     )
     @app_commands.choices(entity_type=[
         app_commands.Choice(name="User", value="user"),
@@ -390,23 +428,23 @@ class Admin(commands.Cog, name="Admin"):
         app_commands.Choice(name="Channel", value="channel"),
     ])
     async def blacklist_add(
-        self, interaction: discord.Interaction, entity_type: str, entity_id: str
+        self, interaction: discord.Interaction, entity_type: str, entity: str
     ) -> None:
         if not await self._guard(interaction):
             return
-        try:
-            eid = int(entity_id)
-        except ValueError:
+        eid = _resolve_id(entity)
+        if eid is None:
             await interaction.response.send_message(
-                embed=discord.Embed(description="❌ Invalid ID.", color=BOT_ERROR_COLOR),
+                embed=discord.Embed(description="❌ Invalid mention or ID.", color=BOT_ERROR_COLOR),
                 ephemeral=True,
             )
             return
         assert interaction.guild
         await self.db.add_blacklist(interaction.guild.id, entity_type, eid)
+        label = _format_entity(interaction.guild, entity_type, eid)
         await interaction.response.send_message(
             embed=discord.Embed(
-                description=BLACKLIST_ADD.format(type=entity_type, id=entity_id),
+                description=BLACKLIST_ADD.format(type=entity_type, id=label),
                 color=BOT_SUCCESS_COLOR,
             )
         )
@@ -414,7 +452,7 @@ class Admin(commands.Cog, name="Admin"):
     @blacklist_group.command(name="remove", description="[Admin] Remove a user, role, or channel from the XP blacklist.")
     @app_commands.describe(
         entity_type="Entity type.",
-        entity_id="The ID to remove.",
+        entity="Mention or ID to remove.",
     )
     @app_commands.choices(entity_type=[
         app_commands.Choice(name="User", value="user"),
@@ -422,22 +460,22 @@ class Admin(commands.Cog, name="Admin"):
         app_commands.Choice(name="Channel", value="channel"),
     ])
     async def blacklist_remove(
-        self, interaction: discord.Interaction, entity_type: str, entity_id: str
+        self, interaction: discord.Interaction, entity_type: str, entity: str
     ) -> None:
         if not await self._guard(interaction):
             return
-        try:
-            eid = int(entity_id)
-        except ValueError:
+        eid = _resolve_id(entity)
+        if eid is None:
             await interaction.response.send_message(
-                embed=discord.Embed(description="❌ Invalid ID.", color=BOT_ERROR_COLOR),
+                embed=discord.Embed(description="❌ Invalid mention or ID.", color=BOT_ERROR_COLOR),
                 ephemeral=True,
             )
             return
         assert interaction.guild
         removed = await self.db.remove_blacklist(interaction.guild.id, entity_type, eid)
         color = BOT_SUCCESS_COLOR if removed else BOT_WARN_COLOR
-        desc = BLACKLIST_REMOVE.format(type=entity_type, id=entity_id) if removed else "⚠️ That entity wasn't in the blacklist."
+        label = _format_entity(interaction.guild, entity_type, eid)
+        desc = BLACKLIST_REMOVE.format(type=entity_type, id=label) if removed else "⚠️ That entity wasn't in the blacklist."
         await interaction.response.send_message(
             embed=discord.Embed(description=desc, color=color)
         )
@@ -454,12 +492,12 @@ class Admin(commands.Cog, name="Admin"):
                 ephemeral=True,
             )
             return
-        lines = [f"**{r['entity_type']}** `{r['entity_id']}`" for r in rows]
+        lines = [f"**{r['entity_type']}** {_format_entity(interaction.guild, r['entity_type'], r['entity_id'])}" for r in rows]
         embed = discord.Embed(title="🚫 XP Blacklist", description="\n".join(lines), color=BOT_COLOR)
         embed.set_footer(text=EMBED_FOOTER)
         await interaction.response.send_message(embed=embed)
 
-    # ── role rewards ──────────────────────────────────────────────────────────
+    # ── role rewards ───────────────────────────────────────────────────────────────────
 
     @app_commands.command(name=CMD_ROLE_REWARD_ADD, description="[Admin] Set a role reward for a level.")
     @app_commands.describe(level="Level that triggers the reward.", role="Role to grant.")
@@ -516,7 +554,7 @@ class Admin(commands.Cog, name="Admin"):
         embed.set_footer(text=EMBED_FOOTER)
         await interaction.response.send_message(embed=embed)
 
-    # ── voice XP toggle ───────────────────────────────────────────────────────
+    # ── voice XP toggle ───────────────────────────────────────────────────────────────────
 
     @app_commands.command(name="voicexp", description="[Admin] Enable or disable voice XP for this server.")
     @app_commands.describe(enabled="True to enable, False to disable.")
@@ -531,7 +569,7 @@ class Admin(commands.Cog, name="Admin"):
             embed=discord.Embed(description=f"Voice XP is now **{state}**.", color=BOT_SUCCESS_COLOR)
         )
 
-    # ── drops ─────────────────────────────────────────────────────────────────
+    # ── drops ───────────────────────────────────────────────────────────────────────────────────────────────────
 
     @app_commands.command(name=CMD_DROP_CREATE, description="[Admin] Create a queued XP drop/trivia question.")
     @app_commands.describe(
@@ -604,9 +642,9 @@ class Admin(commands.Cog, name="Admin"):
             embed=discord.Embed(description=f"Auto XP drops are now **{state}**.", color=BOT_SUCCESS_COLOR)
         )
 
-    # ── config view ───────────────────────────────────────────────────────────
+    # ── config ────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name=CMD_CONFIG_VIEW, description="[Admin] View Phosphorus settings for this server.")
+    @app_commands.command(name=CMD_CONFIG_VIEW, description="[Admin] View all current server settings.")
     @app_commands.guild_only()
     async def config(self, interaction: discord.Interaction) -> None:
         if not await self._guard(interaction):
@@ -614,16 +652,14 @@ class Admin(commands.Cog, name="Admin"):
         assert interaction.guild
         cfg = await self.db.get_config(interaction.guild.id)
 
-        def _ch(col: str) -> str:
-            if not cfg or not cfg[col]:
-                return "_Not set_"
-            ch = interaction.guild.get_channel(cfg[col])  # type: ignore[union-attr]
-            return ch.mention if ch else f"Deleted ({cfg[col]})"
+        def _ch(key: str) -> str:
+            cid = cfg.get(key) if cfg else None
+            if not cid:
+                return "Not set"
+            ch = interaction.guild.get_channel(cid)
+            return ch.mention if ch else f"<#{cid}>"
 
-        embed = discord.Embed(
-            title=f"⚙️ Phosphorus Config — {interaction.guild.name}",
-            color=BOT_COLOR,
-        )
+        embed = discord.Embed(title="🔧 Server Configuration", color=BOT_COLOR)
         embed.add_field(name="Level-Up Channel", value=_ch("levelup_channel"), inline=True)
         embed.add_field(name="Weekly Report Channel", value=_ch("weekly_channel"), inline=True)
         embed.add_field(name="XP Drops Channel", value=_ch("drops_channel"), inline=True)
@@ -633,7 +669,7 @@ class Admin(commands.Cog, name="Admin"):
         embed.set_footer(text=EMBED_FOOTER)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    # ── permit system ─────────────────────────────────────────────────────────
+    # ── permit system ─────────────────────────────────────────────────────────────────────────────
 
     permit_group = app_commands.Group(
         name=CMD_PERMIT,
@@ -645,7 +681,7 @@ class Admin(commands.Cog, name="Admin"):
     @app_commands.describe(
         command="The admin command name to permit.",
         entity_type="Whether to grant to a role or user.",
-        entity_id="The ID of the role or user.",
+        entity="Mention or ID of the role or user.",
     )
     @app_commands.choices(
         command=[app_commands.Choice(name=c, value=c) for c in ADMIN_COMMANDS],
@@ -659,23 +695,23 @@ class Admin(commands.Cog, name="Admin"):
         interaction: discord.Interaction,
         command: str,
         entity_type: str,
-        entity_id: str,
+        entity: str,
     ) -> None:
         if not await self._admin_only_guard(interaction):
             return
-        try:
-            eid = int(entity_id)
-        except ValueError:
+        eid = _resolve_id(entity)
+        if eid is None:
             await interaction.response.send_message(
-                embed=discord.Embed(description="❌ Invalid ID — must be a number.", color=BOT_ERROR_COLOR),
+                embed=discord.Embed(description="❌ Invalid mention or ID.", color=BOT_ERROR_COLOR),
                 ephemeral=True,
             )
             return
         assert interaction.guild
         await self.db.add_permit(interaction.guild.id, command, entity_type, eid)
+        label = _format_entity(interaction.guild, entity_type, eid)
         await interaction.response.send_message(
             embed=discord.Embed(
-                description=PERMIT_SET.format(cmd=command, type=entity_type, id=entity_id),
+                description=PERMIT_SET.format(cmd=command, type=entity_type, id=label),
                 color=BOT_SUCCESS_COLOR,
             )
         )
@@ -684,7 +720,7 @@ class Admin(commands.Cog, name="Admin"):
     @app_commands.describe(
         command="The command whose permit to remove.",
         entity_type="Role or user.",
-        entity_id="The ID of the role or user.",
+        entity="Mention or ID of the role or user.",
     )
     @app_commands.choices(
         command=[app_commands.Choice(name=c, value=c) for c in ADMIN_COMMANDS],
@@ -698,23 +734,23 @@ class Admin(commands.Cog, name="Admin"):
         interaction: discord.Interaction,
         command: str,
         entity_type: str,
-        entity_id: str,
+        entity: str,
     ) -> None:
         if not await self._admin_only_guard(interaction):
             return
-        try:
-            eid = int(entity_id)
-        except ValueError:
+        eid = _resolve_id(entity)
+        if eid is None:
             await interaction.response.send_message(
-                embed=discord.Embed(description="❌ Invalid ID.", color=BOT_ERROR_COLOR),
+                embed=discord.Embed(description="❌ Invalid mention or ID.", color=BOT_ERROR_COLOR),
                 ephemeral=True,
             )
             return
         assert interaction.guild
         removed = await self.db.remove_permit(interaction.guild.id, command, entity_type, eid)
         color = BOT_SUCCESS_COLOR if removed else BOT_WARN_COLOR
+        label = _format_entity(interaction.guild, entity_type, eid)
         desc = (
-            PERMIT_REMOVED.format(cmd=command, type=entity_type, id=entity_id)
+            PERMIT_REMOVED.format(cmd=command, type=entity_type, id=label)
             if removed else PERMIT_NOT_FOUND
         )
         await interaction.response.send_message(
@@ -743,7 +779,7 @@ class Admin(commands.Cog, name="Admin"):
             )
             return
         lines = [
-            f"`{r['command_name']}` → **{r['entity_type']}** `{r['entity_id']}`"
+            f"`{r['command_name']}` → **{r['entity_type']}** {_format_entity(interaction.guild, r['entity_type'], r['entity_id'])}"
             for r in rows
         ]
         title = f"🔑 Permits" + (f" — {command}" if command else "")
@@ -751,8 +787,7 @@ class Admin(commands.Cog, name="Admin"):
         embed.set_footer(text=EMBED_FOOTER)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-
-    # ── booster system ────────────────────────────────────────────────────────
+    # ── booster system ─────────────────────────────────────────────────────────────────────────────
 
     booster_group = app_commands.Group(
         name=CMD_BOOSTER,
@@ -763,7 +798,7 @@ class Admin(commands.Cog, name="Admin"):
     @booster_group.command(name="set", description="[Admin] Set an XP booster role or channel.")
     @app_commands.describe(
         entity_type="Whether to boost a role or a channel.",
-        entity_id="The ID of the role or channel.",
+        entity="Mention or ID of the role or channel.",
         multiplier=f"XP multiplier (default {BOOSTER_DEFAULT_MULTIPLIER}). Must be > 1.",
     )
     @app_commands.choices(entity_type=[
@@ -774,7 +809,7 @@ class Admin(commands.Cog, name="Admin"):
         self,
         interaction: discord.Interaction,
         entity_type: str,
-        entity_id: str,
+        entity: str,
         multiplier: float = BOOSTER_DEFAULT_MULTIPLIER,
     ) -> None:
         if not await self._guard(interaction):
@@ -788,11 +823,10 @@ class Admin(commands.Cog, name="Admin"):
                 ephemeral=True,
             )
             return
-        try:
-            eid = int(entity_id)
-        except ValueError:
+        eid = _resolve_id(entity)
+        if eid is None:
             await interaction.response.send_message(
-                embed=discord.Embed(description="❌ Invalid ID — must be a number.", color=BOT_ERROR_COLOR),
+                embed=discord.Embed(description="❌ Invalid mention or ID.", color=BOT_ERROR_COLOR),
                 ephemeral=True,
             )
             return
@@ -811,9 +845,10 @@ class Admin(commands.Cog, name="Admin"):
                 ephemeral=True,
             )
             return
+        label = _format_entity(interaction.guild, entity_type, eid)
         await interaction.response.send_message(
             embed=discord.Embed(
-                description=BOOSTER_SET.format(mult=round(multiplier, 2), type=entity_type, id=entity_id),
+                description=BOOSTER_SET.format(mult=round(multiplier, 2), type=entity_type, id=label),
                 color=BOT_SUCCESS_COLOR,
             )
         )
@@ -821,7 +856,7 @@ class Admin(commands.Cog, name="Admin"):
     @booster_group.command(name="remove", description="[Admin] Remove an XP booster role or channel.")
     @app_commands.describe(
         entity_type="Role or channel.",
-        entity_id="The ID to remove.",
+        entity="Mention or ID to remove.",
     )
     @app_commands.choices(entity_type=[
         app_commands.Choice(name="Role", value="role"),
@@ -831,23 +866,23 @@ class Admin(commands.Cog, name="Admin"):
         self,
         interaction: discord.Interaction,
         entity_type: str,
-        entity_id: str,
+        entity: str,
     ) -> None:
         if not await self._guard(interaction):
             return
-        try:
-            eid = int(entity_id)
-        except ValueError:
+        eid = _resolve_id(entity)
+        if eid is None:
             await interaction.response.send_message(
-                embed=discord.Embed(description="❌ Invalid ID.", color=BOT_ERROR_COLOR),
+                embed=discord.Embed(description="❌ Invalid mention or ID.", color=BOT_ERROR_COLOR),
                 ephemeral=True,
             )
             return
         assert interaction.guild
         removed = await self.db.remove_booster(interaction.guild.id, entity_type, eid)
         color = BOT_SUCCESS_COLOR if removed else BOT_WARN_COLOR
+        label = _format_entity(interaction.guild, entity_type, eid)
         desc = (
-            BOOSTER_REMOVED.format(type=entity_type, id=entity_id)
+            BOOSTER_REMOVED.format(type=entity_type, id=label)
             if removed
             else BOOSTER_NOT_FOUND.format(type=entity_type)
         )
@@ -872,12 +907,7 @@ class Admin(commands.Cog, name="Admin"):
             return
         lines: list[str] = []
         for r in rows:
-            if r["entity_type"] == "role":
-                obj = interaction.guild.get_role(r["entity_id"])
-                label = obj.mention if obj else f"Deleted role ({r['entity_id']})"
-            else:
-                obj = interaction.guild.get_channel(r["entity_id"])
-                label = obj.mention if obj else f"Deleted channel ({r['entity_id']})"
+            label = _format_entity(interaction.guild, r["entity_type"], r["entity_id"])
             lines.append(f"**{r['entity_type'].title()}** {label} → **{r['multiplier']}x**")
         roles_used = sum(1 for r in rows if r["entity_type"] == "role")
         channels_used = sum(1 for r in rows if r["entity_type"] == "channel")

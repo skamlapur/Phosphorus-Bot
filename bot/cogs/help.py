@@ -40,12 +40,12 @@ _ADMIN_COMMANDS = [
     ("/setchannel [#channel]", "Set the level-up announcement channel."),
     ("/setweekchannel [#channel]", "Set the weekly report channel."),
     ("/setdropschannel [#channel]", "Set the XP drops channel."),
-    ("/setmultiplier value", "Server-wide XP multiplier (e.g. `2.0`)."),
-    ("/multiplier set type id value", "Per-role/channel/user XP multiplier."),
-    ("/multiplier remove type id", "Remove a per-entity multiplier."),
+    ("/setmultiplier value", "Global server-wide XP multiplier (applies to everything)."),
+    ("/multiplier set type @entity value", "Per-role / per-channel / per-user XP multiplier (overrides global)."),
+    ("/multiplier remove type @entity", "Remove a per-entity multiplier."),
     ("/multiplier list", "List all per-entity multipliers."),
-    ("/blacklist add type id", "Block a user/role/channel from earning XP."),
-    ("/blacklist remove type id", "Unblock."),
+    ("/blacklist add type @entity", "Block a user/role/channel from earning XP."),
+    ("/blacklist remove type @entity", "Unblock."),
     ("/blacklist list", "Show all blacklisted entities."),
     ("/addrolereward level @role", "Grant a role automatically at a level."),
     ("/removerolereward level", "Remove a role reward."),
@@ -55,11 +55,11 @@ _ADMIN_COMMANDS = [
     ("/droptrigger", "Post the next queued drop immediately."),
     ("/dropsenable true/false", "Enable or disable auto-drops."),
     ("/config", "View all current server settings."),
-    ("/permit set command type id", "Grant a role/user access to a specific admin command."),
-    ("/permit remove command type id", "Remove a command permit."),
+    ("/permit set command type @user/@role", "Grant a role/user access to a specific admin command."),
+    ("/permit remove command type @user/@role", "Remove a command permit."),
     ("/permit list [command]", "List all active permits."),
-    ("/booster set role|channel id [mult]", "Set a booster role/channel (up to 3 each). Default 1.5x."),
-    ("/booster remove role|channel id", "Remove a booster role or channel."),
+    ("/booster set role|channel @role/#channel [mult]", "Set a booster role/channel (up to 3 each). Default 1.5x."),
+    ("/booster remove role|channel @role/#channel", "Remove a booster role or channel."),
     ("/booster list", "Show all active XP boosters."),
 ]
 
@@ -109,7 +109,7 @@ def _build_embed() -> discord.Embed:
         inline=False,
     )
 
-    embed.set_footer(text=f"{EMBED_FOOTER} · v{BOT_VERSION}")
+    embed.set_footer(text=EMBED_FOOTER)
     return embed
 
 
@@ -122,7 +122,15 @@ class Help(commands.Cog, name="Help"):
 
     @app_commands.command(name=CMD_HELP, description="Show all Phosphorus commands.")
     async def help_slash(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_message(embed=_build_embed(), ephemeral=True)
+        try:
+            await interaction.response.send_message(embed=_build_embed(), ephemeral=True)
+        except Exception as exc:
+            log.error("help_slash failed: %s", exc, exc_info=True)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    embed=discord.Embed(description="❌ Failed to show help. Please try again.", color=0xED4245),
+                    ephemeral=True,
+                )
 
     # ── prefix command ────────────────────────────────────────────────────────
 

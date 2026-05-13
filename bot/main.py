@@ -8,9 +8,11 @@ import asyncio
 import logging
 import os
 import sys
+import time
 
 import discord
 from discord.ext import commands
+from discord.app_commands import AppCommandError
 from dotenv import load_dotenv
 
 from constants import BOT_NAME, BOT_VERSION, CMD_PREFIX, COGS
@@ -39,12 +41,13 @@ intents.voice_states = True
 class Phosphorus(commands.Bot):
     def __init__(self) -> None:
         super().__init__(
-            command_prefix=CMD_PREFIX,
+            command_prefix=(CMD_PREFIX.lower(), CMD_PREFIX.upper()),
             intents=intents,
             help_command=None,
             case_insensitive=True,
         )
         self.db = Database()
+        self._start_time: float = time.time()
 
     async def setup_hook(self) -> None:
         await self.db.connect()
@@ -57,6 +60,28 @@ class Phosphorus(commands.Bot):
                 log.error("Failed to load cog %s: %s", cog, exc, exc_info=True)
         await self.tree.sync()
         log.info("Slash commands synced globally.")
+
+        # Global slash-error handler — prevents "application did not respond"
+        async def on_app_command_error(
+            interaction: discord.Interaction, error: AppCommandError
+        ) -> None:
+            log.error("Unhandled app command error: %s", error, exc_info=True)
+            msg = "❌ Something went wrong. Please try again later."
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        embed=discord.Embed(description=msg, color=0xED4245),
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.response.send_message(
+                        embed=discord.Embed(description=msg, color=0xED4245),
+                        ephemeral=True,
+                    )
+            except Exception:
+                pass
+
+        self.tree.on_error = on_app_command_error
 
     async def on_ready(self) -> None:
         assert self.user
