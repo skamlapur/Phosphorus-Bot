@@ -58,6 +58,9 @@ _ADMIN_COMMANDS = [
     ("/permit set command type id", "Grant a role/user access to a specific admin command."),
     ("/permit remove command type id", "Remove a command permit."),
     ("/permit list [command]", "List all active permits."),
+    ("/booster set role|channel id [mult]", "Set a booster role/channel (up to 3 each). Default 1.5x."),
+    ("/booster remove role|channel id", "Remove a booster role or channel."),
+    ("/booster list", "Show all active XP boosters."),
 ]
 
 
@@ -92,6 +95,16 @@ def _build_embed() -> discord.Embed:
             "to individual admin commands without giving them full Manage Server.\n"
             "Use `/permit set <command> role|user <id>` to grant, "
             "`/permit remove` to revoke, `/permit list` to inspect."
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="🚀 Booster Roles & Channels",
+        value=(
+            "Up to **3 booster roles** and **3 booster channels** can be configured per server. "
+            "Members who have a booster role or send messages in a booster channel earn extra XP "
+            "(the highest applicable booster multiplier is used, stacking on top of other multipliers).\n"
+            "Use `/booster set role|channel <id> [multiplier]` to add one."
         ),
         inline=False,
     )

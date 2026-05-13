@@ -72,6 +72,9 @@ bot/
 | `/removerolereward <level>` | Remove a role reward |
 | `/listroles` | List all role rewards |
 | `/voicexp <enabled>` | Enable / disable voice XP for the server |
+| `/booster set role\|channel <id> [mult]` | Set a booster role/channel (up to 3 each, default 1.5x) |
+| `/booster remove role\|channel <id>` | Remove a booster |
+| `/booster list` | List all active XP boosters |
 | `/dropcreate <question> <answer> [xp]` | Create a queued XP drop |
 | `/droptrigger` | Post the next queued drop immediately |
 | `/dropsenable <enabled>` | Enable / disable auto-drop posting |

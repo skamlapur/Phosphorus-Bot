@@ -118,12 +118,17 @@ class Leveling(commands.Cog, name="Leveling"):
             guild_id, user_id, message.channel.id, role_ids
         )
 
+        # Booster role / channel bonus (takes highest applicable booster)
+        booster_mult = await self.db.get_booster_multiplier(
+            guild_id, message.channel.id, role_ids
+        )
+
         # Streak bonus
         streak, is_new_day = await self.db.update_streak(guild_id, user_id)
         streak_mult = self._streak_multiplier(streak)
 
         raw_xp = random.randint(XP_PER_MESSAGE_MIN, XP_PER_MESSAGE_MAX)
-        xp_gain = max(1, round(raw_xp * server_and_entity_mult * streak_mult))
+        xp_gain = max(1, round(raw_xp * server_and_entity_mult * booster_mult * streak_mult))
 
         new_xp, new_level, leveled_up = await self.db.add_xp(
             guild_id, user_id, xp_gain, now, is_message=True

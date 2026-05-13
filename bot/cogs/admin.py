@@ -20,8 +20,16 @@ from constants import (
     BOT_ERROR_COLOR,
     BOT_SUCCESS_COLOR,
     BOT_WARN_COLOR,
+    BOOSTER_DEFAULT_MULTIPLIER,
+    BOOSTER_LIMIT,
+    BOOSTER_MAX_CHANNELS,
+    BOOSTER_MAX_ROLES,
+    BOOSTER_NOT_FOUND,
+    BOOSTER_REMOVED,
+    BOOSTER_SET,
     CHANNEL_SET_SUCCESS,
     CMD_BLACKLIST,
+    CMD_BOOSTER,
     CMD_CONFIG_VIEW,
     CMD_DROP_CREATE,
     CMD_ENTITY_MULT,
@@ -742,6 +750,148 @@ class Admin(commands.Cog, name="Admin"):
         embed = discord.Embed(title=title, description="\n".join(lines), color=BOT_COLOR)
         embed.set_footer(text=EMBED_FOOTER)
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+    # ── booster system ────────────────────────────────────────────────────────
+
+    booster_group = app_commands.Group(
+        name=CMD_BOOSTER,
+        description="Set up to 3 booster roles and 3 booster channels that earn bonus XP.",
+        guild_only=True,
+    )
+
+    @booster_group.command(name="set", description="[Admin] Set an XP booster role or channel.")
+    @app_commands.describe(
+        entity_type="Whether to boost a role or a channel.",
+        entity_id="The ID of the role or channel.",
+        multiplier=f"XP multiplier (default {BOOSTER_DEFAULT_MULTIPLIER}). Must be > 1.",
+    )
+    @app_commands.choices(entity_type=[
+        app_commands.Choice(name="Role", value="role"),
+        app_commands.Choice(name="Channel", value="channel"),
+    ])
+    async def booster_set(
+        self,
+        interaction: discord.Interaction,
+        entity_type: str,
+        entity_id: str,
+        multiplier: float = BOOSTER_DEFAULT_MULTIPLIER,
+    ) -> None:
+        if not await self._guard(interaction):
+            return
+        if multiplier <= 1.0:
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    description="❌ Booster multiplier must be greater than **1.0**.",
+                    color=BOT_ERROR_COLOR,
+                ),
+                ephemeral=True,
+            )
+            return
+        try:
+            eid = int(entity_id)
+        except ValueError:
+            await interaction.response.send_message(
+                embed=discord.Embed(description="❌ Invalid ID — must be a number.", color=BOT_ERROR_COLOR),
+                ephemeral=True,
+            )
+            return
+        assert interaction.guild
+        ok = await self.db.add_booster(
+            interaction.guild.id, entity_type, eid, multiplier,
+            BOOSTER_MAX_ROLES, BOOSTER_MAX_CHANNELS,
+        )
+        if not ok:
+            max_val = BOOSTER_MAX_ROLES if entity_type == "role" else BOOSTER_MAX_CHANNELS
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    description=BOOSTER_LIMIT.format(max=max_val, type=entity_type),
+                    color=BOT_ERROR_COLOR,
+                ),
+                ephemeral=True,
+            )
+            return
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                description=BOOSTER_SET.format(mult=round(multiplier, 2), type=entity_type, id=entity_id),
+                color=BOT_SUCCESS_COLOR,
+            )
+        )
+
+    @booster_group.command(name="remove", description="[Admin] Remove an XP booster role or channel.")
+    @app_commands.describe(
+        entity_type="Role or channel.",
+        entity_id="The ID to remove.",
+    )
+    @app_commands.choices(entity_type=[
+        app_commands.Choice(name="Role", value="role"),
+        app_commands.Choice(name="Channel", value="channel"),
+    ])
+    async def booster_remove(
+        self,
+        interaction: discord.Interaction,
+        entity_type: str,
+        entity_id: str,
+    ) -> None:
+        if not await self._guard(interaction):
+            return
+        try:
+            eid = int(entity_id)
+        except ValueError:
+            await interaction.response.send_message(
+                embed=discord.Embed(description="❌ Invalid ID.", color=BOT_ERROR_COLOR),
+                ephemeral=True,
+            )
+            return
+        assert interaction.guild
+        removed = await self.db.remove_booster(interaction.guild.id, entity_type, eid)
+        color = BOT_SUCCESS_COLOR if removed else BOT_WARN_COLOR
+        desc = (
+            BOOSTER_REMOVED.format(type=entity_type, id=entity_id)
+            if removed
+            else BOOSTER_NOT_FOUND.format(type=entity_type)
+        )
+        await interaction.response.send_message(
+            embed=discord.Embed(description=desc, color=color)
+        )
+
+    @booster_group.command(name="list", description="[Admin] List all active XP boosters.")
+    async def booster_list(self, interaction: discord.Interaction) -> None:
+        if not await self._guard(interaction):
+            return
+        assert interaction.guild
+        rows = await self.db.get_boosters(interaction.guild.id)
+        if not rows:
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    description="No boosters configured. Use `/booster set` to add one.",
+                    color=BOT_WARN_COLOR,
+                ),
+                ephemeral=True,
+            )
+            return
+        lines: list[str] = []
+        for r in rows:
+            if r["entity_type"] == "role":
+                obj = interaction.guild.get_role(r["entity_id"])
+                label = obj.mention if obj else f"Deleted role ({r['entity_id']})"
+            else:
+                obj = interaction.guild.get_channel(r["entity_id"])
+                label = obj.mention if obj else f"Deleted channel ({r['entity_id']})"
+            lines.append(f"**{r['entity_type'].title()}** {label} → **{r['multiplier']}x**")
+        roles_used = sum(1 for r in rows if r["entity_type"] == "role")
+        channels_used = sum(1 for r in rows if r["entity_type"] == "channel")
+        embed = discord.Embed(
+            title="🚀 XP Boosters",
+            description="\n".join(lines),
+            color=BOT_COLOR,
+        )
+        embed.set_footer(
+            text=f"{EMBED_FOOTER} · "
+                 f"Roles {roles_used}/{BOOSTER_MAX_ROLES} · "
+                 f"Channels {channels_used}/{BOOSTER_MAX_CHANNELS}"
+        )
+        await interaction.response.send_message(embed=embed)
 
 
 async def setup(bot: commands.Bot) -> None:

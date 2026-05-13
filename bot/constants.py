@@ -33,6 +33,13 @@ VOICE_ALONE_DENY = True        # don't award XP if user is alone in VC
 VOICE_HEARTBEAT_INTERVAL = 60  # seconds between voice XP ticks
 
 # ──────────────────────────────────────────────
+# Booster roles / channels
+# ──────────────────────────────────────────────
+BOOSTER_MAX_ROLES    = 3      # max booster roles per guild
+BOOSTER_MAX_CHANNELS = 3      # max booster channels per guild
+BOOSTER_DEFAULT_MULTIPLIER = 1.5  # default XP multiplier for boosters
+
+# ──────────────────────────────────────────────
 # Streak system
 # ──────────────────────────────────────────────
 STREAK_BONUS_THRESHOLD = 3     # streak days needed before bonus applies
@@ -116,7 +123,8 @@ CMD_BLACKLIST = "blacklist"
 CMD_ENTITY_MULT = "multiplier"
 CMD_DROP_CREATE = "dropcreate"
 CMD_DROP_TRIGGER = "droptrigger"
-CMD_PERMIT = "permit"
+CMD_PERMIT  = "permit"
+CMD_BOOSTER = "booster"
 
 # All admin command names used for the permit system
 ADMIN_COMMANDS = [
@@ -128,6 +136,7 @@ ADMIN_COMMANDS = [
     "addrolereward", "removerolereward", "listroles",
     "voicexp", "dropcreate", "droptrigger", "dropsenable",
     "config",
+    "booster set", "booster remove", "booster list",
 ]
 
 # ──────────────────────────────────────────────
@@ -170,6 +179,10 @@ ERR_NO_PERMISSION = "❌ You need **Manage Server**, **Administrator**, or a com
 PERMIT_SET = "✅ Granted `{cmd}` access to {type} `{id}`."
 PERMIT_REMOVED = "✅ Removed `{cmd}` permit for {type} `{id}`."
 PERMIT_NOT_FOUND = "⚠️ No matching permit found."
+BOOSTER_SET = "✅ Set **{mult}x** XP boost for {type} `{id}`."
+BOOSTER_REMOVED = "✅ Removed XP boost for {type} `{id}`."
+BOOSTER_NOT_FOUND = "⚠️ No booster found for that {type}."
+BOOSTER_LIMIT = "❌ Maximum {max} booster {type}(s) reached. Remove one first with `/booster remove`."
 ERR_INVALID_LEVEL = "❌ Level must be a positive integer."
 ERR_INVALID_MULT = "❌ Multiplier must be a positive number (e.g. `1.5`)."
 ERR_USER_NOT_FOUND = "❌ That user has no XP records in this server."

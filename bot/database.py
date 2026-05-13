@@ -175,6 +175,14 @@ class Database:
                 PRIMARY KEY (guild_id, command_name, entity_type, entity_id)
             );
 
+            CREATE TABLE IF NOT EXISTS boosters (
+                guild_id    INTEGER NOT NULL,
+                entity_type TEXT    NOT NULL,
+                entity_id   INTEGER NOT NULL,
+                multiplier  REAL    NOT NULL DEFAULT 1.5,
+                PRIMARY KEY (guild_id, entity_type, entity_id)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_users_guild_xp
                 ON users (guild_id, xp DESC);
             CREATE INDEX IF NOT EXISTS idx_weekly_guild_week_xp
@@ -733,6 +741,79 @@ class Database:
             (winner_id, claimed_at, drop_id),
         )
         await self._conn.commit()
+
+    # ── boosters ──────────────────────────────────────────────────────────────
+
+    async def add_booster(
+        self,
+        guild_id: int,
+        entity_type: str,
+        entity_id: int,
+        multiplier: float,
+        max_roles: int,
+        max_channels: int,
+    ) -> bool:
+        """Insert or update a booster. Returns False if the limit is hit for new entries."""
+        assert self._conn
+        limit = max_roles if entity_type == "role" else max_channels
+        async with self._conn.execute(
+            "SELECT entity_id FROM boosters WHERE guild_id=? AND entity_type=?",
+            (guild_id, entity_type),
+        ) as cur:
+            existing = [row["entity_id"] for row in await cur.fetchall()]
+        if entity_id not in existing and len(existing) >= limit:
+            return False
+        await self._conn.execute(
+            "INSERT INTO boosters (guild_id, entity_type, entity_id, multiplier) VALUES (?,?,?,?) "
+            "ON CONFLICT(guild_id, entity_type, entity_id) DO UPDATE SET multiplier=excluded.multiplier",
+            (guild_id, entity_type, entity_id, round(multiplier, 2)),
+        )
+        await self._conn.commit()
+        return True
+
+    async def remove_booster(
+        self, guild_id: int, entity_type: str, entity_id: int
+    ) -> bool:
+        assert self._conn
+        cur = await self._conn.execute(
+            "DELETE FROM boosters WHERE guild_id=? AND entity_type=? AND entity_id=?",
+            (guild_id, entity_type, entity_id),
+        )
+        await self._conn.commit()
+        return cur.rowcount > 0
+
+    async def get_boosters(self, guild_id: int) -> list[aiosqlite.Row]:
+        assert self._conn
+        async with self._conn.execute(
+            "SELECT * FROM boosters WHERE guild_id=? ORDER BY entity_type, entity_id",
+            (guild_id,),
+        ) as cur:
+            return list(await cur.fetchall())
+
+    async def get_booster_multiplier(
+        self, guild_id: int, channel_id: int, role_ids: list[int]
+    ) -> float:
+        """Return the highest applicable booster multiplier (1.0 if none)."""
+        assert self._conn
+        best = 1.0
+        async with self._conn.execute(
+            "SELECT multiplier FROM boosters WHERE guild_id=? AND entity_type='channel' AND entity_id=?",
+            (guild_id, channel_id),
+        ) as cur:
+            row = await cur.fetchone()
+            if row:
+                best = max(best, row["multiplier"])
+        if role_ids:
+            placeholders = ",".join("?" * len(role_ids))
+            async with self._conn.execute(
+                f"SELECT MAX(multiplier) AS m FROM boosters "
+                f"WHERE guild_id=? AND entity_type='role' AND entity_id IN ({placeholders})",
+                (guild_id, *role_ids),
+            ) as cur:
+                row = await cur.fetchone()
+                if row and row["m"]:
+                    best = max(best, row["m"])
+        return best
 
     # ── permits ───────────────────────────────────────────────────────────────
 
