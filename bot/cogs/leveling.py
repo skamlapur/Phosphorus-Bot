@@ -1,8 +1,3 @@
-"""
-Phosphorus – Leveling cog (v2)
-on_message XP grant with blacklist, per-entity multipliers, streak bonus,
-weekly stat tracking, level-up announcements, and role-reward assignment.
-"""
 from __future__ import annotations
 
 import random
@@ -17,6 +12,8 @@ from constants import (
     EMBED_FOOTER,
     LEVELUP_DESC,
     LEVELUP_TITLE,
+    GREEN_TICK,
+    RED_CROSS,
     ROLE_REWARD_GRANTED,
     STREAK_BONUS_MAX,
     STREAK_BONUS_MULTIPLIER,

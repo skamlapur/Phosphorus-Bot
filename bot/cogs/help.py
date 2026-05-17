@@ -1,7 +1,3 @@
-"""
-Phosphorus – Help cog (v2.1)
-/help  and  p!help — shows all available commands, grouped by category.
-"""
 from __future__ import annotations
 
 import logging
@@ -15,6 +11,7 @@ from constants import (
     BOT_NAME,
     BOT_VERSION,
     CMD_HELP,
+    RED_CROSS,
     CMD_PREFIX,
     EMBED_FOOTER,
 )
@@ -64,53 +61,103 @@ _ADMIN_COMMANDS = [
 ]
 
 
-def _build_embed() -> discord.Embed:
+def _build_main_embed() -> discord.Embed:
+    """Builds the initial landing page help embed."""
     embed = discord.Embed(
-        title=f"📖 {BOT_NAME} Help",
+        title=f"{BOT_NAME} Help",
         description=(
-            f"**{BOT_NAME}** is a full-featured XP leveling bot.\n"
-            f"Prefix: `{CMD_PREFIX}` · Slash commands: `/`"
+            f"**{BOT_NAME}** is a full-featured Discord leveling bot.\n\n"
+            "Select the category you want to see commands of:"
         ),
         color=BOT_COLOR,
     )
+    embed.set_footer(text=EMBED_FOOTER)
+    return embed
 
-    user_lines = "\n".join(
-        f"**{name}**\n{desc}" for name, desc in _USER_COMMANDS
-    )
-    embed.add_field(name="👤 User Commands", value=user_lines, inline=False)
 
-    admin_lines = "\n".join(
-        f"`{name}` — {desc}" for name, desc in _ADMIN_COMMANDS
+def _build_category_embed(category: str) -> discord.Embed:
+    """Builds the specific category views when picked from the dropdown."""
+    embed = discord.Embed(
+        title=f"{BOT_NAME} Help — {category}",
+        color=BOT_COLOR,
     )
-    embed.add_field(
-        name="🛡️ Admin Commands  *(Manage Server / Administrator / Permit)*",
-        value=admin_lines,
-        inline=False,
-    )
+    
+    if category == "User Commands":
+        user_lines = "\n".join(f"**{name}**\n{desc}" for name, desc in _USER_COMMANDS)
+        embed.add_field(name="General Commands", value=user_lines, inline=False)
+        
+    elif category == "Admin Commands":
+        admin_fields: list[str] = []
+        current_chunk: list[str] = []
+        current_length = 0
 
-    embed.add_field(
-        name="🔑 Permit System",
-        value=(
-            "Permits let server owners grant specific users or roles access "
-            "to individual admin commands without giving them full Manage Server.\n"
-            "Use `/permit set <command> role|user <id>` to grant, "
-            "`/permit remove` to revoke, `/permit list` to inspect."
-        ),
-        inline=False,
-    )
-    embed.add_field(
-        name="🚀 Booster Roles & Channels",
-        value=(
-            "Up to **3 booster roles** and **3 booster channels** can be configured per server. "
-            "Members who have a booster role or send messages in a booster channel earn extra XP "
-            "(the highest applicable booster multiplier is used, stacking on top of other multipliers).\n"
-            "Use `/booster set role|channel <id> [multiplier]` to add one."
-        ),
-        inline=False,
-    )
+        for name, desc in _ADMIN_COMMANDS:
+            line = f"`{name}` — {desc}\n"
+            if current_length + len(line) > 1000:
+                admin_fields.append("".join(current_chunk))
+                current_chunk = [line]
+                current_length = len(line)
+            else:
+                current_chunk.append(line)
+                current_length += len(line)
+
+        if current_chunk:
+            admin_fields.append("".join(current_chunk))
+
+        for i, field_content in enumerate(admin_fields):
+            field_name = "Admin Actions" if i == 0 else "Admin Actions (Continued)"
+            embed.add_field(name=field_name, value=field_content, inline=False)
+            
+    elif category == "System Overview":
+        embed.add_field(
+            name="Permit System",
+            value=(
+                "Permits let server owners grant specific users or roles access "
+                "to individual admin commands without giving them full Manage Server.\n"
+                "Use `/permit set <command> role|user <id>` to grant, "
+                "`/permit remove` to revoke, `/permit list` to inspect."
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="Booster Roles & Channels",
+            value=(
+                "Up to **3 booster roles** and **3 booster channels** can be configured per server. "
+                "Members who have a booster role or send messages in a booster channel earn extra XP.\n"
+                "Use `/booster set role|channel <id> [multiplier]` to add one."
+            ),
+            inline=False,
+        )
 
     embed.set_footer(text=EMBED_FOOTER)
     return embed
+
+
+class HelpDropdown(discord.ui.Select):
+    def __init__(self) -> None:
+        options = [
+            discord.SelectOption(label="Main Menu", description="Return to the main help screen."),
+            discord.SelectOption(label="User Commands", description="Show general member commands."),
+            discord.SelectOption(label="Admin Commands", description="Show server management commands."),
+            discord.SelectOption(label="System Overview", description="View details on Permits and Boosters."),
+        ]
+        super().__init__(placeholder="Choose a help category...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        selected_category = self.values[0]
+        
+        if selected_category == "Main Menu":
+            new_embed = _build_main_embed()
+        else:
+            new_embed = _build_category_embed(selected_category)
+            
+        await interaction.response.edit_message(embed=new_embed, view=self.view)
+
+
+class HelpDropdownView(discord.ui.View):
+    def __init__(self, timeout: float = 120.0) -> None:
+        super().__init__(timeout=timeout)
+        self.add_item(HelpDropdown())
 
 
 class Help(commands.Cog, name="Help"):
@@ -123,12 +170,14 @@ class Help(commands.Cog, name="Help"):
     @app_commands.command(name=CMD_HELP, description="Show all Phosphorus commands.")
     async def help_slash(self, interaction: discord.Interaction) -> None:
         try:
-            await interaction.response.send_message(embed=_build_embed(), ephemeral=True)
+            embed = _build_main_embed()
+            view = HelpDropdownView()
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
         except Exception as exc:
             log.error("help_slash failed: %s", exc, exc_info=True)
             if not interaction.response.is_done():
                 await interaction.response.send_message(
-                    embed=discord.Embed(description="❌ Failed to show help. Please try again.", color=0xED4245),
+                    embed=discord.Embed(description=f"{RED_CROSS} Failed to show help. Please try again.", color=0xED4245),
                     ephemeral=True,
                 )
 
@@ -136,7 +185,9 @@ class Help(commands.Cog, name="Help"):
 
     @commands.command(name=CMD_HELP, aliases=["h", "commands"])
     async def help_prefix(self, ctx: commands.Context) -> None:
-        await ctx.send(embed=_build_embed())
+        embed = _build_main_embed()
+        view = HelpDropdownView()
+        await ctx.send(embed=embed, view=view)
 
 
 async def setup(bot: commands.Bot) -> None:

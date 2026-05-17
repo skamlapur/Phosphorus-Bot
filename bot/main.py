@@ -1,7 +1,3 @@
-"""
-Phosphorus – Discord Leveling Bot  v2
-Entry point: loads cogs, connects to DB, starts the bot.
-"""
 from __future__ import annotations
 
 import asyncio
@@ -15,7 +11,7 @@ from discord.ext import commands
 from discord.app_commands import AppCommandError
 from dotenv import load_dotenv
 
-from constants import BOT_NAME, BOT_VERSION, CMD_PREFIX, COGS
+from constants import BOT_NAME, BOT_VERSION, CMD_PREFIX, COGS, RED_CROSS
 from database import Database
 
 load_dotenv()
@@ -55,7 +51,7 @@ class Phosphorus(commands.Bot):
         for cog in COGS:
             try:
                 await self.load_extension(cog)
-                log.info("Loaded cog: %s", cog)
+                log.info("Loaded: %s", cog)
             except Exception as exc:
                 log.error("Failed to load cog %s: %s", cog, exc, exc_info=True)
         await self.tree.sync()
@@ -65,8 +61,8 @@ class Phosphorus(commands.Bot):
         async def on_app_command_error(
             interaction: discord.Interaction, error: AppCommandError
         ) -> None:
-            log.error("Unhandled app command error: %s", error, exc_info=True)
-            msg = "❌ Something went wrong. Please try again later."
+            log.error("Unhandled command error: %s", error, exc_info=True)
+            msg = f"{RED_CROSS} Something went wrong. Please try again later."
             try:
                 if interaction.response.is_done():
                     await interaction.followup.send(

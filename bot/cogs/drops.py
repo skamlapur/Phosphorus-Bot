@@ -1,9 +1,3 @@
-"""
-Phosphorus – XP Drops cog
-Admin commands for drops live in admin.py.
-This cog handles: listening for correct answers, the expiry loop,
-and the auto-post loop.  It also exposes trigger_drop() for admin.py.
-"""
 from __future__ import annotations
 
 import logging
@@ -19,6 +13,8 @@ from constants import (
     DROPS_ANSWER_TIMEOUT,
     DROPS_AUTO_INTERVAL_MIN,
     EMBED_FOOTER,
+    GREEN_TICK,
+    RED_CROSS,
     ERR_DROP_ACTIVE,
     ERR_NO_DROP,
 )
@@ -90,7 +86,7 @@ class Drops(commands.Cog, name="Drops"):
             return ERR_NO_DROP + " Create one with `/dropcreate`."
 
         ok = await self._post_drop(guild_id, drop)
-        return "✅ Drop posted!" if ok else "❌ Failed to post — is the drops channel set correctly?"
+        return f"{GREEN_TICK} Drop posted!" if ok else f"{RED_CROSS}Failed to post — is the drops channel set correctly?"
 
     # ── message listener ──────────────────────────────────────────────────────
 

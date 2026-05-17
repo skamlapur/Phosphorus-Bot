@@ -1,9 +1,3 @@
-"""
-Phosphorus – Admin cog (v2.2)
-Full suite of admin commands: XP management, config, blacklist,
-per-entity multipliers, role rewards, drops, voice toggle, permit system,
-booster system.
-"""
 from __future__ import annotations
 
 import logging
@@ -22,6 +16,8 @@ from constants import (
     BOT_ERROR_COLOR,
     BOT_SUCCESS_COLOR,
     BOT_WARN_COLOR,
+    GREEN_TICK,
+    RED_CROSS,
     BOOSTER_DEFAULT_MULTIPLIER,
     BOOSTER_LIMIT,
     BOOSTER_MAX_CHANNELS,
@@ -144,7 +140,7 @@ class Admin(commands.Cog, name="Admin"):
         """Strict guard — only Manage Server / Administrator (no permits)."""
         if not isinstance(interaction.user, discord.Member) or not _is_admin(interaction.user):
             await interaction.response.send_message(
-                embed=discord.Embed(description="❌ Only server administrators can manage permits.", color=BOT_ERROR_COLOR),
+                embed=discord.Embed(description=f"{RED_CROSS} Only server administrators can manage permits.", color=BOT_ERROR_COLOR),
                 ephemeral=True,
             )
             return False
@@ -196,7 +192,7 @@ class Admin(commands.Cog, name="Admin"):
             return
         if amount <= 0:
             await interaction.response.send_message(
-                embed=discord.Embed(description="❌ Amount must be positive.", color=BOT_ERROR_COLOR),
+                embed=discord.Embed(description=f"{RED_CROSS} Amount must be positive.", color=BOT_ERROR_COLOR),
                 ephemeral=True,
             )
             return
@@ -218,7 +214,7 @@ class Admin(commands.Cog, name="Admin"):
             return
         if amount <= 0:
             await interaction.response.send_message(
-                embed=discord.Embed(description="❌ Amount must be positive.", color=BOT_ERROR_COLOR),
+                embed=discord.Embed(description=f"{RED_CROSS} Amount must be positive.", color=BOT_ERROR_COLOR),
                 ephemeral=True,
             )
             return
@@ -244,7 +240,7 @@ class Admin(commands.Cog, name="Admin"):
             return
         assert interaction.guild
         await self.db.set_levelup_channel(interaction.guild.id, channel.id if channel else None)
-        desc = CHANNEL_SET_SUCCESS.format(channel=channel.mention) if channel else "✅ Level-up channel cleared (uses message channel)."
+        desc = CHANNEL_SET_SUCCESS.format(channel=channel.mention) if channel else f"{GREEN_TICK} Level-up channel cleared (uses message channel)."
         await interaction.response.send_message(
             embed=discord.Embed(description=desc, color=BOT_SUCCESS_COLOR)
         )
@@ -257,7 +253,7 @@ class Admin(commands.Cog, name="Admin"):
             return
         assert interaction.guild
         await self.db.set_weekly_channel(interaction.guild.id, channel.id if channel else None)
-        desc = WEEKLY_CHANNEL_SET.format(channel=channel.mention) if channel else "✅ Weekly reports channel cleared."
+        desc = WEEKLY_CHANNEL_SET.format(channel=channel.mention) if channel else f"{GREEN_TICK} Weekly reports channel cleared."
         await interaction.response.send_message(
             embed=discord.Embed(description=desc, color=BOT_SUCCESS_COLOR)
         )
@@ -270,7 +266,7 @@ class Admin(commands.Cog, name="Admin"):
             return
         assert interaction.guild
         await self.db.set_drops_channel(interaction.guild.id, channel.id if channel else None)
-        desc = DROPS_CHANNEL_SET.format(channel=channel.mention) if channel else "✅ Drops channel cleared."
+        desc = DROPS_CHANNEL_SET.format(channel=channel.mention) if channel else f"{GREEN_TICK} Drops channel cleared."
         await interaction.response.send_message(
             embed=discord.Embed(description=desc, color=BOT_SUCCESS_COLOR)
         )
@@ -341,7 +337,7 @@ class Admin(commands.Cog, name="Admin"):
         eid = _resolve_id(entity)
         if eid is None:
             await interaction.response.send_message(
-                embed=discord.Embed(description="❌ Invalid mention or ID.", color=BOT_ERROR_COLOR),
+                embed=discord.Embed(description=f"{RED_CROSS} Invalid mention or ID.", color=BOT_ERROR_COLOR),
                 ephemeral=True,
             )
             return
@@ -377,7 +373,7 @@ class Admin(commands.Cog, name="Admin"):
         eid = _resolve_id(entity)
         if eid is None:
             await interaction.response.send_message(
-                embed=discord.Embed(description="❌ Invalid mention or ID.", color=BOT_ERROR_COLOR),
+                embed=discord.Embed(description=f"{RED_CROSS} Invalid mention or ID.", color=BOT_ERROR_COLOR),
                 ephemeral=True,
             )
             return
@@ -435,7 +431,7 @@ class Admin(commands.Cog, name="Admin"):
         eid = _resolve_id(entity)
         if eid is None:
             await interaction.response.send_message(
-                embed=discord.Embed(description="❌ Invalid mention or ID.", color=BOT_ERROR_COLOR),
+                embed=discord.Embed(description=f"{RED_CROSS} Invalid mention or ID.", color=BOT_ERROR_COLOR),
                 ephemeral=True,
             )
             return
@@ -467,7 +463,7 @@ class Admin(commands.Cog, name="Admin"):
         eid = _resolve_id(entity)
         if eid is None:
             await interaction.response.send_message(
-                embed=discord.Embed(description="❌ Invalid mention or ID.", color=BOT_ERROR_COLOR),
+                embed=discord.Embed(description=f"{RED_CROSS} Invalid mention or ID.", color=BOT_ERROR_COLOR),
                 ephemeral=True,
             )
             return
@@ -564,7 +560,7 @@ class Admin(commands.Cog, name="Admin"):
             return
         assert interaction.guild
         await self.db.set_voice_xp_enabled(interaction.guild.id, enabled)
-        state = "enabled ✅" if enabled else "disabled ❌"
+        state = f"enabled {GREEN_TICK}" if enabled else f"disabled {RED_CROSS}"
         await interaction.response.send_message(
             embed=discord.Embed(description=f"Voice XP is now **{state}**.", color=BOT_SUCCESS_COLOR)
         )
@@ -592,7 +588,7 @@ class Admin(commands.Cog, name="Admin"):
         if not cfg or not cfg["drops_channel"]:
             await interaction.response.send_message(
                 embed=discord.Embed(
-                    description="❌ Set a drops channel first with `/setdropschannel`.",
+                    description=f"{RED_CROSS} Set a drops channel first with `/setdropschannel`.",
                     color=BOT_ERROR_COLOR,
                 ),
                 ephemeral=True,
@@ -604,7 +600,7 @@ class Admin(commands.Cog, name="Admin"):
         )
         await interaction.response.send_message(
             embed=discord.Embed(
-                description="✅ Drop created. Use `/droptrigger` to post it, or it will auto-post if drops are enabled.",
+                description=f"{GREEN_TICK} Drop created. Use `/droptrigger` to post it, or it will auto-post if drops are enabled.",
                 color=BOT_SUCCESS_COLOR,
             )
         )
@@ -618,7 +614,7 @@ class Admin(commands.Cog, name="Admin"):
         drops_cog = self.bot.get_cog("Drops")
         if not drops_cog:
             await interaction.response.send_message(
-                embed=discord.Embed(description="❌ Drops system unavailable.", color=BOT_ERROR_COLOR),
+                embed=discord.Embed(description=f"{RED_CROSS} Drops system unavailable.", color=BOT_ERROR_COLOR),
                 ephemeral=True,
             )
             return
@@ -637,7 +633,7 @@ class Admin(commands.Cog, name="Admin"):
             return
         assert interaction.guild
         await self.db.set_drops_enabled(interaction.guild.id, enabled)
-        state = "enabled ✅" if enabled else "disabled ❌"
+        state = f"enabled {GREEN_TICK}" if enabled else f"disabled {RED_CROSS}"
         await interaction.response.send_message(
             embed=discord.Embed(description=f"Auto XP drops are now **{state}**.", color=BOT_SUCCESS_COLOR)
         )
@@ -653,19 +649,19 @@ class Admin(commands.Cog, name="Admin"):
         cfg = await self.db.get_config(interaction.guild.id)
 
         def _ch(key: str) -> str:
-            cid = cfg.get(key) if cfg else None
+            cid = cfg[key] if cfg else None
             if not cid:
                 return "Not set"
             ch = interaction.guild.get_channel(cid)
             return ch.mention if ch else f"<#{cid}>"
 
-        embed = discord.Embed(title="🔧 Server Configuration", color=BOT_COLOR)
+        embed = discord.Embed(title="Server Configuration", color=BOT_COLOR)
         embed.add_field(name="Level-Up Channel", value=_ch("levelup_channel"), inline=True)
         embed.add_field(name="Weekly Report Channel", value=_ch("weekly_channel"), inline=True)
         embed.add_field(name="XP Drops Channel", value=_ch("drops_channel"), inline=True)
-        embed.add_field(name="Server XP Multiplier", value=f"**{cfg['xp_multiplier'] if cfg else 1.0}x**", inline=True)
-        embed.add_field(name="Voice XP", value="✅ Enabled" if (not cfg or cfg["voice_xp_enabled"]) else "❌ Disabled", inline=True)
-        embed.add_field(name="Auto Drops", value="✅ Enabled" if (cfg and cfg["drops_enabled"]) else "❌ Disabled", inline=True)
+        embed.add_field(name="Server XP Multiplier", value=f"**{cfg['xp_multiplier'] if (cfg and cfg['xp_multiplier'] is not None) else 1.0}x**", inline=True)
+        embed.add_field(name="Voice XP", value=f"{GREEN_TICK} Enabled" if (not cfg or cfg["voice_xp_enabled"] == 1 or cfg["voice_xp_enabled"] is True) else f"{RED_CROSS} Disabled", inline=True)
+        embed.add_field(name="Auto Drops", value=f"{GREEN_TICK} Enabled" if (cfg and (cfg["drops_enabled"] == 1 or cfg["drops_enabled"] is True)) else f"{RED_CROSS} Disabled", inline=True)
         embed.set_footer(text=EMBED_FOOTER)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -702,7 +698,7 @@ class Admin(commands.Cog, name="Admin"):
         eid = _resolve_id(entity)
         if eid is None:
             await interaction.response.send_message(
-                embed=discord.Embed(description="❌ Invalid mention or ID.", color=BOT_ERROR_COLOR),
+                embed=discord.Embed(description=f"{RED_CROSS} Invalid mention or ID.", color=BOT_ERROR_COLOR),
                 ephemeral=True,
             )
             return
@@ -741,7 +737,7 @@ class Admin(commands.Cog, name="Admin"):
         eid = _resolve_id(entity)
         if eid is None:
             await interaction.response.send_message(
-                embed=discord.Embed(description="❌ Invalid mention or ID.", color=BOT_ERROR_COLOR),
+                embed=discord.Embed(description=f"{RED_CROSS} Invalid mention or ID.", color=BOT_ERROR_COLOR),
                 ephemeral=True,
             )
             return
@@ -817,7 +813,7 @@ class Admin(commands.Cog, name="Admin"):
         if multiplier <= 1.0:
             await interaction.response.send_message(
                 embed=discord.Embed(
-                    description="❌ Booster multiplier must be greater than **1.0**.",
+                    description=f"{RED_CROSS} Booster multiplier must be greater than **1.0**.",
                     color=BOT_ERROR_COLOR,
                 ),
                 ephemeral=True,
@@ -826,7 +822,7 @@ class Admin(commands.Cog, name="Admin"):
         eid = _resolve_id(entity)
         if eid is None:
             await interaction.response.send_message(
-                embed=discord.Embed(description="❌ Invalid mention or ID.", color=BOT_ERROR_COLOR),
+                embed=discord.Embed(description=f"{RED_CROSS} Invalid mention or ID.", color=BOT_ERROR_COLOR),
                 ephemeral=True,
             )
             return
@@ -873,7 +869,7 @@ class Admin(commands.Cog, name="Admin"):
         eid = _resolve_id(entity)
         if eid is None:
             await interaction.response.send_message(
-                embed=discord.Embed(description="❌ Invalid mention or ID.", color=BOT_ERROR_COLOR),
+                embed=discord.Embed(description=f"{RED_CROSS} Invalid mention or ID.", color=BOT_ERROR_COLOR),
                 ephemeral=True,
             )
             return
