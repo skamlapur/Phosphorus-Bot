@@ -20,6 +20,17 @@ GREEN_ARROW = "<:green_arrow:1456254178870427819>"
 GREEN_TICK = "<:Green_Tick:1505553089589936342>"
 RED_CROSS = "<:Red_Tick:1505553246842781746>"
 
+
+# Nunbers
+COLOUR_ZERO = "<:Colorful0:1505913329091219506>"
+COLOUR_ONE = "<:Colorful1:1505913395449172118>"
+COLOUR_TWO = "<:Colorful2:1505915724294520934>"
+COLOUR_THREE = "<:Colorful3:1505915789729988743>"
+COLOUR_FOUR = "<:Colorful4:1505915845631807530>"
+COLOUR_FIVE = "<:Colorful5:1505918355486277697>"
+COLOUR_SIX = "<:Colorful6:1505918399790977204>"
+COLOUR_SEVEN = "<:Colorful7:1505918485614563490>"
+COLOUR_EIGHT = "<:Colorful8:1505918576136159297>"
 # ───────────────────────────────────
 # XP system – message XP
 # ───────────────────────────────────
@@ -95,9 +106,8 @@ DB_PRAGMAS = {
     "temp_store": "MEMORY",
 }
 
-# ──────────────────────────────────────────────
+# ───────────────────────────────────
 # Cog list
-# ──────────────────────────────────────────────
 COGS = [
     "cogs.leveling",
     "cogs.voice",
@@ -111,9 +121,20 @@ COGS = [
     "cogs.botinfo",
 ]
 
-# ──────────────────────────────────────────────
+# ───────────────────────────────────
+VARIABLES = {
+    "{user}": "Mentions the member who leveled up (e.g., @Username).",
+    "{user_name}": "The plain display name of the member without the mention symbol.",
+    "{level}": "The new level milestone the member just reached.",
+    "{xp}": "The current overall lifetime experience points balance of the user.",
+    "{guild}": "The name of this Discord server.",
+}
+
+
+
+# ───────────────────────────────────
 # Command names
-# ──────────────────────────────────────────────
+# ───────────────────────────────────
 CMD_PREFIX = "p!"
 CMD_RANK = "rank"
 CMD_LEADERBOARD = "leaderboard"
@@ -163,31 +184,37 @@ PROGRESS_EMPTY = "░"
 # Embed strings
 # ───────────────────────────────────
 EMBED_FOOTER = BOT_NAME
-RANK_TITLE = "{user}'s Profile"
-LB_TITLE = "🏆 {guild} Leaderboard"
+RANK_TITLE = "{user}'s Rank Card"
+LB_TITLE = "Leaderboard"
 LEVELUP_TITLE = "🎉 Level Up!"
 LEVELUP_DESC = "**{user}** just reached **Level {level}**! 🚀"
 STREAK_LEVELUP_BONUS = "\n🔥 **{days}-day streak** is boosting your XP by **+{pct}%**!"
 ROLE_REWARD_GRANTED = "🎖️ You've earned the **{role}** role for reaching level {level}!"
 NO_XP_YET = "You haven't earned any XP yet. Start chatting!"
+
 RESET_SUCCESS = f"{GREEN_TICK} Reset XP and level for **{{user}}**."
 SET_LEVEL_SUCCESS = f"{GREEN_TICK} Set **{{user}}**'s level to **{{level}}**."
 GIVE_XP_SUCCESS = f"{GREEN_TICK} Gave **{{xp}} XP** to **{{user}}**."
 TAKE_XP_SUCCESS = f"{GREEN_TICK} Removed **{{xp}} XP** from **{{user}}**."
 CHANNEL_SET_SUCCESS = f"{GREEN_TICK} Level-up announcements → {{channel}}."
+
 WEEKLY_CHANNEL_SET = f"{GREEN_TICK} Weekly reports → {{channel}}."
 DROPS_CHANNEL_SET = f"{GREEN_TICK} XP drops channel → {{channel}}."
 MULTIPLIER_SET_SUCCESS = f"{GREEN_TICK} Server XP multiplier set to **{{mult}}x**."
+
 ENTITY_MULT_SET = f"{GREEN_TICK} Set **{{mult}}x** multiplier for {{type}} `{{id}}`."
 ENTITY_MULT_REMOVED = f"{GREEN_TICK} Removed multiplier for {{type}} `{{id}}`."
+
 ROLE_ADDED_SUCCESS = f"{GREEN_TICK} Linked **{{role}}** as reward for level **{{level}}**."
 ROLE_REMOVED_SUCCESS = f"{GREEN_TICK} Removed role reward for level **{{level}}**."
 BLACKLIST_ADD = f"{GREEN_TICK} Added {{type}} `{{id}}` to the XP blacklist."
 BLACKLIST_REMOVE = f"{GREEN_TICK} Removed {{type}} `{{id}}` from the XP blacklist."
+
 DROP_ANNOUNCED = "❓ **XP Drop!** First to answer wins **{xp} XP**!\n\n{question}"
 DROP_CLAIMED = "🎉 **{user}** answered correctly and won **{xp} XP**!"
 DROP_EXPIRED = "⏰ The XP drop expired — no one claimed it."
 DROP_CREATED = f"{GREEN_TICK} Drop created. Use `/droptrigger` to post it, or it will auto-post if drops are enabled."
+
 ERR_NO_PERMISSION = f"{RED_CROSS} You need **Manage Server**, **Administrator**, or a command permit to use this."
 PERMIT_SET = f"{GREEN_TICK} Granted `{{cmd}}` access to {{type}} `{{id}}`."
 PERMIT_REMOVED = f"{GREEN_TICK} Removed `{{cmd}}` permit for {{type}} `{{id}}`."
@@ -196,6 +223,7 @@ BOOSTER_SET = f"{GREEN_TICK} Set **{{mult}}x** XP boost for {{type}} `{{id}}`."
 BOOSTER_REMOVED = f"{GREEN_TICK} Removed XP boost for {{type}} `{{id}}`."
 BOOSTER_NOT_FOUND = "⚠️ No booster found for that {type}."
 BOOSTER_LIMIT = f"{RED_CROSS} Maximum {{max}} booster {{type}}(s) reached. Remove one first with `/booster remove`."
+
 ERR_INVALID_LEVEL = f"{RED_CROSS} Level must be a positive integer."
 ERR_INVALID_MULT = f"{RED_CROSS} Multiplier must be a positive number (e.g. `1.5`)."
 ERR_USER_NOT_FOUND = f"{RED_CROSS} That user has no XP records in this server."

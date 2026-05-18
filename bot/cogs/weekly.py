@@ -1,7 +1,3 @@
-"""
-Phosphorus – Weekly Report cog
-Posts a weekly summary every Monday morning to the configured channel.
-"""
 from __future__ import annotations
 
 import logging
